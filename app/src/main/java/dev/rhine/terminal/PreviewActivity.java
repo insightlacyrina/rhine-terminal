@@ -15,6 +15,7 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.LinearLayout;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -26,7 +27,14 @@ public final class PreviewActivity extends Activity implements SurfaceHolder.Cal
     private TextView stats;
     private ArchivePreviewAudio audio;
     private final Runnable statsUpdate=new Runnable() {
-        @Override public void run() { if(resumed&&stats!=null) { stats.setText(session.getStats()); stats.postDelayed(this,1000); } }
+        @Override public void run() {
+            if (!resumed || stats == null) return;
+            String value = session.getStats();
+            int end = value.indexOf(" ·");
+            stats.setText(end > 3 && value.startsWith("提交 ") ? value.substring(3, end) : "— fps");
+            stats.setContentDescription(value);
+            stats.postDelayed(this, 1000);
+        }
     };
     private boolean resumed, ready, screenOn = true, home;
     private int battery = -1;
@@ -70,27 +78,35 @@ public final class PreviewActivity extends Activity implements SurfaceHolder.Cal
             if (event.getActionMasked() == MotionEvent.ACTION_UP) v.performClick();
             return true;
         });
-        int d = (int)(getResources().getDisplayMetrics().density * 12);
-        TextView close = button("✕  退出预览", d);
-        FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END); cp.setMargins(d, d * 2, d, d); frame.addView(close, cp); close.setOnClickListener(v -> finish());
-        stats=button("等待画面",d); stats.setTextSize(11);
-        FrameLayout.LayoutParams sp=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.START); sp.setMargins(d,d*2,d,d); frame.addView(stats,sp);
-        TextView demo = button(home ? "演示样本展开" : "完整动效演示", d);
-        FrameLayout.LayoutParams dp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | (home ? Gravity.CENTER_HORIZONTAL : Gravity.END));
-        dp.setMargins(d, d, d, d * 2);
-        frame.addView(demo, dp);
-        demo.setOnClickListener(v -> {
-            if (home) session.unfoldHome();
-            else {
-                session.playArchiveDemo();
-                if (audio != null) audio.play();
-            }
-        });
+        InstrumentUi ui = new InstrumentUi(this);
+        final int margin=ui.dp(16), gap=ui.dp(8), height=ui.dp(48);
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        FrameLayout.LayoutParams topPosition=new FrameLayout.LayoutParams(-1,height,Gravity.TOP);
+        topPosition.setMargins(margin,margin,margin,0);
+        frame.addView(top,topPosition);
+        stats=ui.button("— fps",false);
+        stats.setTextSize(13);
+        stats.setTextColor(InstrumentUi.ACCENT);
+        top.addView(stats,new LinearLayout.LayoutParams(-2,height));
+        stats.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
+                .setTitle("性能数据").setMessage(session.getStats()).setPositiveButton("关闭",null).show());
+        top.addView(new View(this),new LinearLayout.LayoutParams(0,0,1));
+        TextView close=ui.button("退出预览",false);
+        top.addView(close,new LinearLayout.LayoutParams(-2,height));
+        close.setOnClickListener(v -> finish());
+        LinearLayout bottom=new LinearLayout(this);
+        bottom.setOrientation(LinearLayout.HORIZONTAL);
+        bottom.setGravity(Gravity.END);
+        FrameLayout.LayoutParams bottomPosition=new FrameLayout.LayoutParams(-2,height,Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);
+        bottomPosition.setMargins(margin,0,margin,margin);
+        frame.addView(bottom,bottomPosition);
         if (!home) {
-            TextView denial = button("黑化触发演示", d);
-            FrameLayout.LayoutParams denialPosition = new FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM|Gravity.START);
-            denialPosition.setMargins(d,d,d,d*2);
-            frame.addView(denial,denialPosition);
+            TextView denial=ui.button("拒绝演示",false);
+            LinearLayout.LayoutParams denialPosition=new LinearLayout.LayoutParams(-2,height);
+            denialPosition.setMargins(0,0,gap,0);
+            bottom.addView(denial,denialPosition);
             denial.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
                     .setTitle("选择演示")
                     .setItems(new String[]{"人脸识别失败（演示）","指纹识别失败（演示）",
@@ -99,13 +115,39 @@ public final class PreviewActivity extends Activity implements SurfaceHolder.Cal
                         session.playBiometricDemo(item+1);
                     }).show());
         }
+        TextView demo=ui.button(home ? "演示样本展开" : "完整动效演示",true);
+        bottom.addView(demo,new LinearLayout.LayoutParams(-2,height));
+        demo.setOnClickListener(v -> {
+            if (home) session.unfoldHome();
+            else {
+                session.playArchiveDemo();
+                if (audio != null) audio.play();
+            }
+        });
+        frame.setOnApplyWindowInsetsListener((v,insets) -> {
+            int safeLeft=insets.getSystemWindowInsetLeft(), safeRight=insets.getSystemWindowInsetRight();
+            int safeTop=insets.getSystemWindowInsetTop(), safeBottom=insets.getSystemWindowInsetBottom();
+            if (Build.VERSION.SDK_INT>=28 && insets.getDisplayCutout()!=null) {
+                android.view.DisplayCutout cutout=insets.getDisplayCutout();
+                safeLeft=Math.max(safeLeft,cutout.getSafeInsetLeft()); safeRight=Math.max(safeRight,cutout.getSafeInsetRight());
+                safeTop=Math.max(safeTop,cutout.getSafeInsetTop()); safeBottom=Math.max(safeBottom,cutout.getSafeInsetBottom());
+            }
+            if (Build.VERSION.SDK_INT>=29) {
+                android.graphics.Insets gestures=insets.getSystemGestureInsets();
+                safeLeft=Math.max(safeLeft,gestures.left); safeRight=Math.max(safeRight,gestures.right);
+                safeBottom=Math.max(safeBottom,gestures.bottom);
+            }
+            int left=margin+safeLeft, right=margin+safeRight;
+            topPosition.setMargins(left,margin+safeTop,right,0);
+            bottomPosition.setMargins(left,0,right,margin+safeBottom);
+            top.setLayoutParams(topPosition);
+            bottom.setLayoutParams(bottomPosition);
+            return insets;
+        });
         setContentView(frame);
         IntentFilter screen = new IntentFilter(Intent.ACTION_SCREEN_ON); screen.addAction(Intent.ACTION_SCREEN_OFF); screen.addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED);
         screen.addAction(Intent.ACTION_BATTERY_CHANGED);
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, screen, Context.RECEIVER_NOT_EXPORTED); else registerReceiver(screenReceiver, screen);
-    }
-    private TextView button(String text, int pad) {
-        TextView result = new TextView(this); result.setText(text); result.setTextColor(0xffe6ebda); result.setTextSize(14); result.setGravity(Gravity.CENTER); result.setBackgroundColor(0xcc18211b); result.setPadding(pad, pad, pad, pad); return result;
     }
     private void update() {
         PowerManager power = (PowerManager)getSystemService(POWER_SERVICE);

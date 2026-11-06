@@ -7,113 +7,179 @@ import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
+import android.graphics.Canvas;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.InputFilter;
 import android.text.InputType;
+import android.view.DisplayCutout;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
-import android.widget.*;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.Switch;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import java.util.function.IntConsumer;
+
+import static dev.rhine.terminal.InstrumentUi.*;
 
 public final class MainActivity extends Activity {
-    private static final int BG = Color.rgb(9, 12, 11), PANEL = Color.rgb(21, 27, 23), INK = Color.rgb(230, 235, 218), MUTED = Color.rgb(146, 158, 139), ACCENT = Color.rgb(221, 235, 112);
     private SharedPreferences prefs;
-    private LinearLayout content;
-    private int dp(float n) { return (int) (n * getResources().getDisplayMetrics().density + .5f); }
+    private InstrumentUi ui;
+
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences("terminal", MODE_PRIVATE);
-        getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
-        ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(BG);
-        content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); content.setPadding(dp(24), dp(22), dp(24), dp(36));
-        scroll.addView(content); setContentView(scroll);
-        scroll.setOnApplyWindowInsetsListener((view, insets) -> { content.setPadding(dp(24), dp(22) + insets.getSystemWindowInsetTop(), dp(24), dp(36) + insets.getSystemWindowInsetBottom()); return insets; });
-        TextView kicker = text("R H I N E  /  T E R M I N A L", 11, ACCENT, true); content.addView(kicker);
-        TextView title = text("终端壁纸", 32, INK, true); title.setPadding(0, dp(12), 0, dp(6)); content.addView(title);
-        TextView intro = text("陶瓷档案锁屏 · 暖灰样本主屏", 14, MUTED, false); intro.setLineSpacing(dp(3), 1f); content.addView(intro);
-        LinearLayout actions = new LinearLayout(this); actions.setOrientation(LinearLayout.VERTICAL); actions.setPadding(0, dp(24), 0, dp(18)); content.addView(actions);
-        Button preview = button("锁屏预览 / 完整动效演示", false); actions.addView(preview); preview.setOnClickListener(v -> startActivity(new Intent(this, PreviewActivity.class)));
-        Button apply = button("设置锁屏壁纸  ↗", false); LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(-1, dp(52)); ap.topMargin = dp(10); actions.addView(apply, ap);
-        apply.setOnClickListener(v -> openWallpaperPicker(RhineWallpaperService.class));
-        addHomeActions();
-        LinearLayout nativeCard = card();
-        nativeCard.addView(text("系统密码失败变色（可选）", 15, INK, true));
-        TextView nativeHint = text("默认关闭；需主动授权设备管理权限。仅限系统提供的 PIN 或密码失败事件。", 12, MUTED, false);
-        nativeHint.setPadding(0, dp(5), 0, dp(10)); nativeHint.setLineSpacing(dp(2), 1f); nativeCard.addView(nativeHint);
-        Button nativeOptions = button("查看说明与授权", false); nativeCard.addView(nativeOptions);
-        nativeOptions.setOnClickListener(v -> startActivity(new Intent(this, FailureAccessActivity.class)));
-        label("个性化", "PERSONALIZATION");
-        choice("排版模式", new String[]{"平板模式", "手机模式（一加 13）"},
-                new String[]{"tablet", "phone"}, "wallpaper_layout");
-        lockDisplayNameSetting();
-        toggle("显示主题时钟", "关闭后为设备的系统时钟留出空间。", "archive_clock", true);
-        toggle("预览音效", "在完整动效演示中播放环境音与状态提示音。", "preview_sound", false);
-        toggle("设备运动", "轻微倾斜时移动画面；仅在壁纸可见时使用传感器", "motion", false);
-        toggle("减少动态效果", "降低动画频率并关闭运动响应", "reduced_motion", false);
-        label("画面", "DISPLAY");
-        frameRateChoice();
-        TextView note = text("壁纸与锁屏的显示方式由设备系统决定。壁纸不会替代系统锁屏或解锁方式。", 12, MUTED, false); note.setLineSpacing(dp(3), 1f); note.setPadding(0, dp(20), 0, 0); content.addView(note);
-    }
+        ui = new InstrumentUi(this);
 
-    private void lockDisplayNameSetting() {
-        LinearLayout row = card();
-        TextView current = text(LockDisplayName.read(prefs), 14, MUTED, false);
-        current.setSingleLine(true);
-        current.setPadding(0, 0, 0, dp(8));
-        row.addView(current);
-        Button edit = button("锁屏称呼", false);
-        row.addView(edit);
-        edit.setOnClickListener(v -> {
-            EditText input = new EditText(this);
-            input.setSingleLine(true);
-            input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PERSON_NAME);
-            input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(LockDisplayName.MAX_LENGTH)});
-            input.setHint(LockDisplayName.DEFAULT);
-            input.setText(LockDisplayName.read(prefs));
-            input.selectAll();
-            LinearLayout body = new LinearLayout(this);
-            body.setPadding(dp(24), 0, dp(24), 0);
-            body.addView(input, new LinearLayout.LayoutParams(-1, -2));
-            AlertDialog dialog = new AlertDialog.Builder(this)
-                    .setTitle("锁屏称呼")
-                    .setMessage("留空恢复 ZSY。")
-                    .setView(body)
-                    .setNegativeButton("取消", null)
-                    .setPositiveButton("保存", (d, which) -> {
-                        String name = LockDisplayName.normalize(input.getText().toString());
-                        prefs.edit().putString(LockDisplayName.KEY, name).apply();
-                        current.setText(name);
-                    })
-                    .create();
-            dialog.setOnShowListener(d -> {
-                input.requestFocus();
-                dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
-            });
-            dialog.show();
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(BG);
+        LinearLayout content = column();
+        int screenWidth = getResources().getConfiguration().screenWidthDp;
+        int contentWidth = screenWidth > 1040 ? ui.dp(1040) : -1;
+        scroll.addView(content, new FrameLayout.LayoutParams(contentWidth, -2, Gravity.CENTER_HORIZONTAL));
+        setContentView(scroll);
+        scroll.setOnApplyWindowInsetsListener((view, insets) -> {
+            int left = insets.getSystemWindowInsetLeft(), right = insets.getSystemWindowInsetRight();
+            int top = insets.getSystemWindowInsetTop(), bottom = insets.getSystemWindowInsetBottom();
+            if (Build.VERSION.SDK_INT >= 28) {
+                DisplayCutout cutout = insets.getDisplayCutout();
+                if (cutout != null) {
+                    left = Math.max(left, cutout.getSafeInsetLeft());
+                    right = Math.max(right, cutout.getSafeInsetRight());
+                    top = Math.max(top, cutout.getSafeInsetTop());
+                    bottom = Math.max(bottom, cutout.getSafeInsetBottom());
+                }
+            }
+            content.setPadding(ui.dp(20) + left, ui.dp(18) + top, ui.dp(20) + right, ui.dp(24) + bottom);
+            return insets;
         });
+
+        addHeader(content);
+        LinearLayout wallpapers = content;
+        LinearLayout settings = content;
+        if (screenWidth >= 700) {
+            LinearLayout columns = new LinearLayout(this);
+            columns.setBaselineAligned(false);
+            wallpapers = column();
+            settings = column();
+            columns.addView(wallpapers, new LinearLayout.LayoutParams(0, -2, 1));
+            LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, -2, 1);
+            right.setMarginStart(ui.dp(24));
+            columns.addView(settings, right);
+            content.addView(columns);
+        }
+
+        section(wallpapers, "锁屏壁纸");
+        addWallpaperActions(wallpapers, false);
+        section(wallpapers, "主屏壁纸");
+        addWallpaperActions(wallpapers, true);
+        choice(wallpapers, "主屏风格", new String[]{"石墨终端", "暖白样本盒", "石墨样本盒", "深色边缘环带"},
+                new String[]{CarbonHomeRenderer.STYLE, "light", "dark_gallery", "dark"}, "home_scene");
+        toggle(wallpapers, "深色边缘环带状态文字", "home_telemetry", true);
+        toggle(wallpapers, "解锁后展开", "home_unfold", true);
+
+        section(settings, "个性化");
+        choice(settings, "排版模式", new String[]{"平板模式", "手机模式（一加 13）"},
+                new String[]{"tablet", "phone"}, "wallpaper_layout");
+        TextView displayName = valueText(LockDisplayName.read(prefs));
+        LinearLayout nameRow = settingRow(settings, "锁屏称呼");
+        addValue(nameRow, displayName);
+        nameRow.setOnClickListener(view -> showNameEditor(displayName));
+        toggle(settings, "显示主题时钟", "archive_clock", true);
+        toggle(settings, "预览音效", "preview_sound", false);
+
+        section(settings, "显示");
+        selector(settings, "目标帧率", new String[]{"120 帧", "60 帧"},
+                prefs.getInt("target_fps", 120) <= 60 ? 1 : 0,
+                index -> prefs.edit().putInt("target_fps", index == 0 ? 120 : 60).apply());
+        toggle(settings, "设备运动", "motion", false);
+        toggle(settings, "减少动态效果", "reduced_motion", false);
+
+        section(settings, "权限");
+        LinearLayout failure = settingRow(settings, "系统密码失败变色");
+        addValue(failure, valueText("›"));
+        failure.setOnClickListener(view -> startActivity(new Intent(this, FailureAccessActivity.class)));
     }
 
-    private void addHomeActions() {
-        label("主屏壁纸", "SPECIMEN GALLERY");
-        LinearLayout home = card();
-        TextView description = text("碳黑终端显示设备巡检数据，右侧是五个亚克力样本盒。应用时选「主屏幕」。", 12, MUTED, false);
-        description.setPadding(0, 0, 0, dp(12));
-        home.addView(description);
-        Button preview = button("主屏预览 / 展开演示", true);
-        home.addView(preview);
-        preview.setOnClickListener(v -> startActivity(new Intent(this, PreviewActivity.class)
-                .putExtra(PreviewActivity.EXTRA_HOME, true)));
-        Button apply = button("设置主屏壁纸  ↗", false);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(52));
-        params.topMargin = dp(8);
-        home.addView(apply, params);
-        apply.setOnClickListener(v -> openWallpaperPicker(HomeWallpaperService.class));
-        choice("主屏风格", new String[]{"石墨终端", "暖白样本盒", "石墨样本盒", "深色边缘环带"}, new String[]{CarbonHomeRenderer.STYLE, "light", "dark_gallery", "dark"}, "home_scene");
-        toggle("深色主屏状态文字", "仅在深色环带风格中显示设备状态。", "home_telemetry", true);
-        toggle("解锁后展开", "收到系统解锁后信号且壁纸可见时，播放约 1.15 秒的展开。", "home_unfold", true);
+    private void addHeader(LinearLayout parent) {
+        View accent = new View(this);
+        accent.setBackgroundColor(ACCENT);
+        parent.addView(accent, new LinearLayout.LayoutParams(ui.dp(52), ui.dp(3)));
+
+        LinearLayout plate = new LinearLayout(this);
+        plate.setGravity(Gravity.CENTER_VERTICAL);
+        plate.setMinimumHeight(ui.dp(92));
+        plate.setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(14));
+        plate.setBackground(ui.plate(PANEL, RULE));
+        TextView brand = ui.text("RHINE TERMINAL", 27, INK, true);
+        brand.setMaxLines(2);
+        brand.setLetterSpacing(.035f);
+        plate.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
+        View emblem = new View(this) {
+            @Override protected void onDraw(Canvas canvas) {
+                super.onDraw(canvas);
+                float mark = getWidth();
+                NiriWordmark.draw(canvas, 0, (getHeight() - mark * .38f) * .5f, mark, INK, PANEL);
+            }
+        };
+        LinearLayout.LayoutParams emblemSize = new LinearLayout.LayoutParams(ui.dp(53), ui.dp(26));
+        emblemSize.setMarginStart(ui.dp(14));
+        plate.addView(emblem, emblemSize);
+        parent.addView(plate, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private void addWallpaperActions(LinearLayout parent, boolean home) {
+        LinearLayout row = new LinearLayout(this);
+        row.setBaselineAligned(false);
+        Button preview = ui.button(home ? "主屏预览" : "锁屏预览", false);
+        row.addView(preview, new LinearLayout.LayoutParams(0, -1, 1));
+        preview.setOnClickListener(view -> startActivity(new Intent(this, PreviewActivity.class)
+                .putExtra(PreviewActivity.EXTRA_HOME, home)));
+
+        Button apply = ui.button(home ? "设置主屏壁纸" : "设置锁屏壁纸", true);
+        LinearLayout.LayoutParams applySize = new LinearLayout.LayoutParams(0, -1, 1);
+        applySize.setMarginStart(ui.dp(8));
+        row.addView(apply, applySize);
+        apply.setOnClickListener(view -> openWallpaperPicker(home ? HomeWallpaperService.class : RhineWallpaperService.class));
+        addRow(parent, row);
+    }
+
+    private void showNameEditor(TextView current) {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PERSON_NAME);
+        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(LockDisplayName.MAX_LENGTH)});
+        input.setText(LockDisplayName.read(prefs));
+        input.selectAll();
+        LinearLayout body = column();
+        body.setPadding(ui.dp(24), 0, ui.dp(24), 0);
+        body.addView(input, new LinearLayout.LayoutParams(-1, -2));
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("锁屏称呼")
+                .setView(body)
+                .setNeutralButton("恢复默认", (d, which) -> setName(current, LockDisplayName.DEFAULT))
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存", (d, which) -> setName(current, input.getText().toString()))
+                .create();
+        dialog.setOnShowListener(d -> {
+            input.requestFocus();
+            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        });
+        dialog.show();
+    }
+
+    private void setName(TextView current, String raw) {
+        String name = LockDisplayName.normalize(raw);
+        prefs.edit().putString(LockDisplayName.KEY, name).apply();
+        current.setText(name);
     }
 
     private void openWallpaperPicker(Class<?> service) {
@@ -129,25 +195,86 @@ public final class MainActivity extends Activity {
             }
         }
     }
-    private TextView text(String s, int size, int color, boolean bold) { TextView t = new TextView(this); t.setText(s); t.setTextColor(color); t.setTextSize(size); if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD); return t; }
-    private void frameRateChoice() {
-        LinearLayout rate=card(); rate.addView(text("目标帧率",15,INK,true));
-        TextView hint=text("120 帧需系统和屏幕支持；省电和减少动态效果时会降低刷新频率。",12,MUTED,false);
-        hint.setPadding(0,dp(5),0,dp(6)); rate.addView(hint);
-        Spinner spinner=new Spinner(this);
-        ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,new String[]{"120 帧 / 流畅","60 帧 / 节能"});
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinner.setAdapter(adapter); spinner.setContentDescription("目标帧率");
-        spinner.setSelection(prefs.getInt("target_fps",120)<=60?1:0); rate.addView(spinner);
-        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            public void onItemSelected(AdapterView<?> parent,View view,int position,long id) { prefs.edit().putInt("target_fps",position==0?120:60).apply(); }
-            public void onNothingSelected(AdapterView<?> parent) {}
-        });
+
+    private LinearLayout column() {
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        return column;
     }
-    private GradientDrawable shape(int fill, int stroke) { GradientDrawable d = new GradientDrawable(); d.setColor(fill); d.setCornerRadius(dp(12)); d.setStroke(dp(1), stroke); return d; }
-    private Button button(String s, boolean primary) { Button b = new Button(this); b.setText(s); b.setAllCaps(false); b.setTextSize(15); b.setTypeface(Typeface.DEFAULT, Typeface.BOLD); b.setTextColor(primary ? BG : INK); b.setBackground(shape(primary ? ACCENT : PANEL, primary ? ACCENT : Color.rgb(65, 77, 58))); b.setMinHeight(dp(52)); b.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(52))); return b; }
-    private void label(String title, String en) { LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(0, dp(18), 0, dp(10)); TextView t = text(title, 17, INK, true); row.addView(t, new LinearLayout.LayoutParams(0, -2, 1)); row.addView(text(en, 10, MUTED, true)); content.addView(row); }
-    private LinearLayout card() { LinearLayout c = new LinearLayout(this); c.setOrientation(LinearLayout.VERTICAL); c.setPadding(dp(16), dp(15), dp(16), dp(15)); c.setBackground(shape(PANEL, Color.rgb(40, 49, 39))); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.bottomMargin = dp(8); content.addView(c, p); return c; }
-    private void toggle(String title, String hint, String key, boolean def) { LinearLayout c = card(); LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); c.addView(row); LinearLayout words = new LinearLayout(this); words.setOrientation(LinearLayout.VERTICAL); row.addView(words, new LinearLayout.LayoutParams(0, -2, 1)); words.addView(text(title, 15, INK, true)); TextView h = text(hint, 12, MUTED, false); h.setPadding(0, dp(5), dp(10), 0); h.setLineSpacing(dp(2), 1f); words.addView(h); Switch sw = new Switch(this); sw.setChecked(prefs.getBoolean(key, def)); sw.setContentDescription(title); row.addView(sw); sw.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(key, checked).apply()); }
-    private void choice(String title, String[] labels, String[] values, String key) { LinearLayout c = card(); c.addView(text(title, 15, INK, true)); Spinner spinner = new Spinner(this); ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, labels) { @Override public View getView(int position, View convertView, android.view.ViewGroup parent) { TextView v = (TextView) super.getView(position, convertView, parent); v.setTextColor(INK); v.setPadding(0, dp(10), 0, dp(4)); return v; } }; adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item); spinner.setAdapter(adapter); String current = prefs.getString(key, "auto"); for (int i = 0; i < values.length; i++) if (values[i].equals(current)) spinner.setSelection(i); c.addView(spinner); spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() { public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) { prefs.edit().putString(key, values[position]).apply(); } public void onNothingSelected(android.widget.AdapterView<?> parent) {} }); }
+
+    private void section(LinearLayout parent, String name) {
+        TextView heading = ui.text(name, 18, INK, true);
+        if (Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true);
+        heading.setPadding(0, ui.dp(18), 0, ui.dp(10));
+        parent.addView(heading);
+    }
+
+    private void addRow(LinearLayout parent, View row) {
+        LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(-1, -2);
+        size.bottomMargin = ui.dp(5);
+        parent.addView(row, size);
+    }
+
+    private LinearLayout settingRow(LinearLayout parent, String title) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(ui.dp(52));
+        row.setFocusable(true);
+        row.setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(8));
+        row.setBackground(ui.control(PANEL, RULE));
+        row.addView(ui.text(title, 15, INK, true), new LinearLayout.LayoutParams(0, -2, 1));
+        addRow(parent, row);
+        return row;
+    }
+
+    private TextView valueText(String label) {
+        TextView value = ui.text(label, 14, ACCENT, false);
+        value.setMaxWidth(ui.dp(158));
+        value.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        value.setMaxLines(2);
+        value.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        return value;
+    }
+
+    private void addValue(LinearLayout row, TextView value) {
+        LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(-2, -2);
+        size.setMarginStart(ui.dp(12));
+        row.addView(value, size);
+    }
+
+    private void toggle(LinearLayout parent, String title, String key, boolean fallback) {
+        LinearLayout row = settingRow(parent, title);
+        Switch control = new Switch(this);
+        control.setChecked(prefs.getBoolean(key, fallback));
+        control.setContentDescription(title);
+        row.addView(control);
+        row.setOnClickListener(view -> control.toggle());
+        control.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(key, checked).apply());
+    }
+
+    private void choice(LinearLayout parent, String title, String[] labels, String[] values, String key) {
+        String saved = prefs.getString(key, values[0]);
+        int selected = 0;
+        for (int index = 0; index < values.length; index++) {
+            if (values[index].equals(saved)) selected = index;
+        }
+        selector(parent, title, labels, selected, index -> prefs.edit().putString(key, values[index]).apply());
+    }
+
+    private void selector(LinearLayout parent, String title, String[] labels, int selected, IntConsumer save) {
+        LinearLayout row = settingRow(parent, title);
+        TextView value = valueText(labels[selected]);
+        addValue(row, value);
+        int[] current = {selected};
+        row.setOnClickListener(view -> new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setSingleChoiceItems(labels, current[0], (dialog, which) -> {
+                    save.accept(which);
+                    current[0] = which;
+                    value.setText(labels[which]);
+                    dialog.dismiss();
+                })
+                .setNegativeButton("取消", null)
+                .show());
+    }
 }
