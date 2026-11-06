@@ -1,0 +1,29 @@
+Rhine Lock
+https://github.com/tmc5csxr9m-cpu/rhine-lock
+Upstream revision a4df68c6bd9e01ecb7660659becf495957e57faa
+
+The Android and browser renderers adapt the 400-fin curve, transforms,
+assembly, peel, carve, and material from frontend/src/lib/scene/Stage.ts and
+shaders.ts. Two complete turns and periodic scan alignment close the tilted
+fin frame at the loop boundary. The wallpaper uses a GLES 3 adaptation of the upstream grade
+effect for denial, after its initial coherent motion.
+The archive uses timing and easing from frontend/src/App.svelte, the card
+flight from frontend/src/lib/transition.ts, and visual timing from the
+AuthRing.svelte and Warning.svelte components.
+
+The desktop galleries use the upstream card.png, dimensions, corner profile
+and orientation basis. Their five-card layout adapts the upstream specimen
+stream for portrait and landscape wallpaper, with the upstream flow rate and
+endpoint fades. Direct lighting and analytic
+softbox reflections use the upstream Stage.ts and tools/assets/gen_studio_hdr.py
+as their source.
+The combined implementation is distributed under GNU AGPL-3.0-or-later.
+See AGPL-3.0.txt and the accompanying Rhine Terminal source archive.
+
+scene/smoke.jpg, scene/hex.png and scene/card.png are unmodified copies of the generated
+textures from frontend/public/scene. Their generators and provenance are
+documented in upstream tools/assets/README.md.
+
+Montserrat Light, Montserrat Bold, and JetBrains Mono Regular are unmodified
+fonts distributed under the SIL Open Font License 1.1. The original notices
+are included in fonts/OFL-Montserrat.txt and fonts/OFL-JetBrainsMono.txt.

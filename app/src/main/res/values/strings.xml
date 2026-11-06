@@ -1,0 +1,4 @@
+<resources><string name="wallpaper_description">Rhine Terminal 动态壁纸</string>    <string name="native_failure_admin_description">可选：接收本设备 PIN 或密码输入失败的系统事件，用于壁纸变色。不会读取密码，也不使用锁定、清除或重置权限。</string>
+    <string name="home_wallpaper_name">Rhine Terminal · 深色主屏</string>
+    <string name="home_wallpaper_description">深色莱茵终端，四边折带与系统状态流</string>
+</resources>

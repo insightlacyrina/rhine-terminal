@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  /><title>RHINE / ARCHIVE · 壁纸预览</title
+  ><style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #252522;
+      color: #e9e7df;
+      font:
+        14px system-ui,
+        sans-serif;
+    }
+    header {
+      padding: 18px 24px;
+      display: flex;
+      gap: 18px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+    h1 {
+      font-size: 16px;
+      letter-spacing: 0.14em;
+      margin: 0;
+    }
+    header span {
+      color: #b0b0a6;
+      font-size: 12px;
+    }
+    .wrap {
+      display: flex;
+      justify-content: center;
+      padding: 0 18px;
+    }
+    .frame {
+      position: relative;
+      width: min(100%, 1100px);
+      aspect-ratio: 16/10;
+      box-shadow: 0 8px 35px #0008;
+    }
+    .frame.portrait {
+      width: min(100%, 560px);
+      aspect-ratio: 10/16;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .controls {
+      max-width: 1100px;
+      margin: 16px auto;
+      padding: 0 18px 30px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button,
+    select {
+      font: inherit;
+      background: #e9e6df;
+      color: #2b2e29;
+      border: 0;
+      border-radius: 3px;
+      padding: 9px 12px;
+      cursor: pointer;
+    }
+    input[type="range"] {
+      flex: 1;
+      min-width: 180px;
+      accent-color: #b6de42;
+    }
+    .note {
+      width: 100%;
+      color: #b0b0a6;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .error {
+      color: #ff9857;
+      white-space: pre-wrap;
+    }
+  </style>
+  <header>
+    <h1>RHINE / ARCHIVE</h1>
+    <span>独立浏览器预览 · 动画与文字均为视觉演示，不涉及系统认证</span>
+  </header>
+  <main>
+    <div class="wrap">
+      <div class="frame"><canvas id="scene"></canvas></div>
+    </div>
+    <div class="controls">
+      <select id="sceneSelect">
+        <option value="lock">锁屏场景</option>
+        <option value="home">暖白样本盒</option>
+        <option value="home-dark">石墨样本盒</option></select
+      ><select id="orientation">
+        <option value="landscape">横屏 16:10</option>
+        <option value="portrait">竖屏 10:16</option></select
+      ><button id="play">暂停</button><button id="demo">完整演示</button
+      ><select id="stageSelect">
+        <option value="0">入场</option>
+        <option value="2000" selected>待机</option>
+        <option value="4000">扫描</option>
+        <option value="5125">黑化冲击 01</option><option value="6000">拒绝 01</option>
+        <option value="7780">恢复</option>
+        <option value="10450">黑化冲击 02</option><option value="11000">拒绝 02</option>
+        <option value="16000">退出</option>
+        <option value="18000">桌面</option></select
+      ><button id="export">导出无文字壁纸</button
+      ><input id="seek" type="range" min="0" max="18200" value="0" /><span
+        id="clock"
+        >0.0s</span
+      >
+      <div class="note">
+        画面使用 Android
+        工程中的相同着色器和雕塑网格；文字是浏览器模拟，设备信息为示例。拖动进度条可查看入场、扫描、拒绝和退出；导出仅包含壁纸画面。浏览器表现不代表设备性能。
+      </div>
+      <div id="error" class="error"></div>
+    </div>
+  </main>
+  <script>
+    const DATA = __DATA__,
+      A = DATA.assets,
+      canvas = document.querySelector("#scene"),
+      gl = canvas.getContext("webgl2", {
+        alpha: false,
+        antialias: true,
+        depth: true,
+        preserveDrawingBuffer: true,
+      });
+    if (!gl) throw Error("需要 WebGL2");
+    function shader(type, src) {
+      let s = gl.createShader(type);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+        throw Error(gl.getShaderInfoLog(s));
+      return s;
+    }
+    function program(v, f) {
+      let p = gl.createProgram();
+      gl.attachShader(p, shader(gl.VERTEX_SHADER, v));
+      gl.attachShader(p, shader(gl.FRAGMENT_SHADER, f));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+        throw Error(gl.getProgramInfoLog(p));
+      return p;
+    }
+    const stage = program(A["stage-vertex.glsl"], A["stage-fragment.glsl"]),
+      hud = program(A["stage-vertex.glsl"], A["hud-fragment.glsl"]),
+      home = program(A["home-vertex.glsl"], A["home-fragment.glsl"]),
+      snapshot = program(A["snapshot-vertex.glsl"], A["snapshot-fragment.glsl"]),
+      obj = program(A["vertex.glsl"], A["fragment.glsl"]),
+      blackout = program(A["stage-vertex.glsl"], A["blackout.glsl"]);
+    const un = (p, n) => gl.getUniformLocation(p, n),
+      u = (p, n, v) => gl.uniform1f(un(p, n), v),
+      b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+    let vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    let vb = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+    gl.bufferData(gl.ARRAY_BUFFER, b64(A["vertices.bin"]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+    let ib = gl.createBuffer(),
+      indices = b64(A["indices.bin"]);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+    const ui = document.createElement("canvas"),
+      ctx = ui.getContext("2d"),
+      tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    for (let [k, v] of [
+      [gl.TEXTURE_MIN_FILTER, gl.LINEAR],
+      [gl.TEXTURE_MAG_FILTER, gl.LINEAR],
+      [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE],
+      [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE],
+    ])
+      gl.texParameteri(gl.TEXTURE_2D, k, v);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    function mul(a, b) {
+      let o = new Float32Array(16);
+      for (let c = 0; c < 4; c++)
+        for (let r = 0; r < 4; r++)
+          for (let k = 0; k < 4; k++)
+            o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k];
+      return o;
+    }
+    function rotate(axis, d) {
+      let r = (d * Math.PI) / 180,
+        c = Math.cos(r),
+        s = Math.sin(r),
+        m = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+      if (axis === "x") {
+        m[5] = c;
+        m[6] = s;
+        m[9] = -s;
+        m[10] = c;
+      } else if (axis === "y") {
+        m[0] = c;
+        m[2] = -s;
+        m[8] = s;
+        m[10] = c;
+      } else {
+        m[0] = c;
+        m[1] = s;
+        m[4] = -s;
+        m[5] = c;
+      }
+      return m;
+    }
+    function matrices(t, portrait, burst, shock, birth) {
+      let model = mul(
+          mul(
+            rotate("x", 16 + Math.sin(t * .11) * 3 + burst * 2.7 + shock * 23),
+            rotate("y", Math.sin(t * .07) * 9 - (1 - birth) * 32),
+          ),
+          rotate("z", (portrait ? 43 : -2) - burst * 3.6 - shock * 30),
+        );
+      model[12]=shock*.28; model[13]=shock*.15; model[14]=shock*.19;
+      let f = 1 / Math.tan((31.5 * Math.PI) / 360),
+        near = 0.1,
+        far = 12,
+        pr = new Float32Array([
+          f,
+          0,
+          0,
+          0,
+          0,
+          f,
+          0,
+          0,
+          0,
+          0,
+          (far + near) / (near - far),
+          -1,
+          0,
+          0,
+          (2 * far * near) / (near - far),
+          0,
+        ]),
+        view = new Float32Array([
+          1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -4.4, 1,
+        ]);
+      return [model, mul(mul(pr, view), model)];
+    }
+    // Samples are generated directly from the Android ArchiveTimeline in 5 ms steps.
+    function state(ms) {
+      const pos = Math.max(0, Math.min(DATA.timeline.length - 1, ms / 5));
+      const i = Math.floor(pos),
+        a = DATA.timeline[i];
+      const b = DATA.timeline[Math.min(i + 1, DATA.timeline.length - 1)];
+      // Do not interpolate across a discrete stage or severity boundary.
+      const blend = a[0] === b[0] && a[1] === b[1] ? pos - i : 0;
+      const v = (n) => a[n] + (b[n] - a[n]) * blend;
+      return {
+        stage: a[0],
+        deny: a[1],
+        birth: v(2),
+        pulse: v(3),
+        scan: v(4),
+        peel: v(5),
+        snapshot: v(6),
+        seconds: v(7),
+        scanHead: v(8),
+        scanOpacity: v(9),
+        foundation: v(10),
+        card: v(11),
+        telemetry: v(12),
+        caption: v(13),
+        burst: v(14),
+        snapshotTravel: v(15),
+        snapshotScan: v(16),
+        snapshotCorners: v(17),
+        snapshotDesat: v(18),
+        denyMix: v(19),
+        recoveryGlitch: v(20),
+      };
+    }
+    const niriSvg = new DOMParser().parseFromString(
+      DATA.wordmark,
+      "image/svg+xml",
+    );
+    const niriParts = [...niriSvg.querySelectorAll("path, circle")].map(
+      (node) => {
+        const shape = new Path2D(node.getAttribute("d") || undefined);
+        const crest = node.localName === "circle";
+        if (crest) {
+          shape.arc(
+            +node.getAttribute("cx"),
+            +node.getAttribute("cy"),
+            +node.getAttribute("r"),
+            0,
+            2 * Math.PI,
+          );
+        }
+        return {
+          shape,
+          crest,
+          fillRule: node.getAttribute("fill-rule") || "nonzero",
+          strokeWidth: +node.getAttribute("stroke-width"),
+          cap: node.getAttribute("stroke-linecap") || "butt",
+          join: node.getAttribute("stroke-linejoin") || "miter",
+        };
+      },
+    );
+
+    function drawNiri(left, top, width, denied) {
+      const scale = width / 200;
+      const ink = denied ? "#c8c7c1" : "#f2f1eb";
+      ctx.save();
+      ctx.translate(left, top);
+      ctx.scale(scale, scale);
+      for (const part of niriParts) {
+        if (part.strokeWidth) {
+          ctx.strokeStyle = ink;
+          ctx.lineWidth = part.strokeWidth;
+          ctx.lineCap = part.cap;
+          ctx.lineJoin = part.join;
+          ctx.stroke(part.shape);
+        } else {
+          ctx.fillStyle = part.crest ? "#0c0f0e" : ink;
+          ctx.fill(part.shape, part.fillRule);
+        }
+      }
+      ctx.restore();
+    }
+
+    const cardTexture = gl.createTexture();
+    const previewImages = {};
+    const previewLoads = ["smoke", "hex", "card"].map(name => new Promise((resolve, reject) => {
+      const image = previewImages[name] = new Image();
+      image.onload = () => {
+        if (name === "card") {
+          gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, cardTexture);
+          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+          for (const [key, value] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, key, value);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+          gl.generateMipmap(gl.TEXTURE_2D);
+        }
+        resolve();
+      }; image.onerror = reject;
+      image.src = `data:image/${name === "smoke" ? "jpeg" : "png"};base64,${DATA.embedded[name]}`;
+    }));
+    const previewFonts = [["RhineLight", "light"], ["RhineBold", "bold"], ["RhineMono", "mono"]].map(async ([family, name]) => {
+      const face = new FontFace(family, `url(data:font/ttf;base64,${DATA.embedded[name]})`);
+      document.fonts.add(await face.load());
+    });
+    let assetsReady = false;
+    Promise.all([...previewLoads, ...previewFonts]).then(() => { assetsReady = true; uiKey = ""; }).catch(console.error);
+    const honeycombCache = new Map();
+    let uiKey = "";
+    function simulatedUI(w, h, f) {
+      let key = [w, h, f.stage, f.deny, Math.floor(Date.now() / 60000)].join(
+        ":",
+      );
+      if (key === uiKey) return;
+      uiKey = key;
+      ui.width = w;
+      ui.height = h;
+      let p = h > w,
+        s = Math.min(w, h),
+        x = w * (p ? 0.085 : 0.045),
+        y = h * (p ? 0.265 : 0.16),
+        px = w * (p ? 0.085 : 0.47),
+        py = h * (p ? 0.555 : 0.67),
+        pw = w * (p ? 0.83 : 0.43),
+        ph = h * (p ? 0.135 : 0.13);
+      const lockRail = w * (p ? 0.25 : 0.223);
+      ctx.strokeStyle = f.deny ? "#8f837999" : "#252522";
+      ctx.lineWidth = Math.max(1, s * 0.0007);
+      ctx.beginPath();
+      ctx.moveTo(lockRail, 0);
+      ctx.lineTo(lockRail, h);
+      ctx.stroke();
+      ctx.fillStyle = f.deny ? "#f4efec" : "#171a17";
+      ctx.font = `bold ${s * 0.0157}px RhineBold`;
+      ctx.fillText("RHINE LAB", x, y + s * 0.022);
+      ctx.fillRect(x, y + s * 0.046, s * 0.18, Math.max(1, s * 0.001));
+      ctx.fillStyle = f.deny ? "#b8a79a" : "#737570";
+      ctx.font = `${s * 0.0095}px RhineMono`;
+      ctx.fillText("INSTRUMENT ARCHIVE", x, y + s * 0.066);
+      const sealX = p ? w * 0.116 : x + s * 0.055,
+        sealY = p ? h * 0.33 : y + s * 0.15;
+      const sealHalf = s * (p ? 0.03 : 0.065);
+      ctx.fillStyle = f.deny ? "#36221b" : "#171a17";
+      ctx.fillRect(
+        sealX - sealHalf,
+        sealY - sealHalf,
+        sealHalf * 2,
+        sealHalf * 2,
+      );
+      ctx.fillStyle = "#f4efec";
+      ctx.font = `${sealHalf * 0.65}px serif`;
+      ctx.textAlign = "center";
+      ctx.fillText("◉", sealX, sealY + sealHalf * 0.22);
+      ctx.textAlign = "left";
+      const annotationX = w * (p ? 0.17 : 0.155),
+        annotationY = h * (p ? 0.323 : 0.25);
+      ctx.fillStyle = f.deny ? "#b8a79a" : "#737570";
+      ctx.font = `${s * 0.0095}px RhineMono`;
+      ctx.fillText("FIELD RECORD", annotationX, annotationY);
+      ctx.fillStyle = f.deny ? "#f4efec" : "#171a17";
+      ctx.font = `bold ${s * 0.0123}px RhineBold`;
+      ctx.fillText("CERAMIC STUDY", annotationX, h * (p ? 0.337 : 0.273));
+      ctx.strokeStyle = f.deny ? "#f4efec59" : "#171a1759";
+      ctx.lineWidth = Math.max(1, s * 0.0006);
+      ctx.beginPath();
+      ctx.moveTo(w * (p ? 0.29 : 0.225), h * (p ? 0.336 : 0.27));
+      ctx.lineTo(w * (p ? 0.56 : 0.326), h * (p ? 0.352 : 0.235));
+      ctx.stroke();
+      if (f.stage >= 1) {
+        ctx.fillStyle = f.deny ? "rgba(41,35,31,.8)" : "rgba(244,239,236,.8)";
+        ctx.fillRect(px, py, pw, ph);
+        ctx.strokeStyle = f.deny ? "#80736a" : "#bcb7b3";
+        ctx.strokeRect(px, py, pw, ph);
+        ctx.fillStyle = f.deny ? "#b8a79a" : "#737570";
+        ctx.font = `${s * 0.0095}px RhineMono`;
+        ctx.fillText("DEVICE / TELEMETRY", px + s * 0.018, py + s * 0.032);
+        ctx.fillText("BATTERY --", px + s * 0.018, py + s * 0.098);
+        ctx.fillStyle = f.deny ? "#f4efec" : "#171a17";
+        ctx.font = `bold ${s * 0.014}px RhineBold`;
+        ctx.fillText("ANDROID TABLET", px + s * 0.018, py + s * 0.073);
+        ctx.fillStyle = "#c3fa3d";
+        ctx.beginPath();
+        ctx.arc(px + pw - s * 0.027, py + s * 0.07, s * 0.0045, 0, 7);
+        ctx.fill();
+      }
+      if (f.stage === 3) {
+        const cx = w * (p ? 0.66 : 0.43),
+          cy = h * (p ? 0.46 : 0.48),
+          trackY = cy + s * 0.108,
+          half = s * 0.0715;
+        ctx.fillStyle = "#171a17";
+        ctx.font = `${s * 0.0095}px RhineMono`;
+        ctx.fillText("VISUAL SCAN", cx - half, trackY - s * 0.012);
+        ctx.fillStyle = "#73757055";
+        ctx.fillRect(cx - half, trackY - s * 0.001, half * 2, s * 0.002);
+      }
+      let now = new Date(),
+        clock = now.toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        date = now
+          .toLocaleDateString("en-GB", {
+            weekday: "short",
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          })
+          .toUpperCase(),
+        right = w * (p ? 0.91 : 0.94),
+        baseline = h * 0.185;
+      ctx.textAlign = "right";
+      ctx.fillStyle = f.deny ? "#f4efec" : "#171a17";
+      ctx.font = `${s * (p ? 0.09 : 0.105)}px RhineLight`;
+      ctx.fillText(clock, right, baseline);
+      ctx.font = `${s * 0.011}px RhineMono`;
+      ctx.fillStyle = f.deny ? "#b8a79a" : "#737570";
+      ctx.fillText(date, right, baseline + s * 0.028);
+      ctx.textAlign = "left";
+      if (f.deny && previewImages.hex.complete && previewImages.hex.naturalWidth) {
+        const left=w*(p?.045:.025), top=h*(p?.52:.59), right=Math.min(w*(p?.24:.15),left+s*.22), bottom=top+s*.13;
+        const cacheKey = `${w}:${h}`;
+        let layer = honeycombCache.get(cacheKey);
+        if (!layer) {
+          const originX=Math.floor(left), originY=Math.floor(top);
+          const canvas=document.createElement("canvas"); canvas.width=Math.ceil(right)-originX; canvas.height=Math.ceil(bottom)-originY;
+          const lc=canvas.getContext("2d"); lc.translate(-originX,-originY);
+          lc.globalAlpha=51/255; lc.fillStyle=lc.createPattern(previewImages.hex,"repeat"); lc.fillRect(left,top,right-left,bottom-top);
+          lc.globalAlpha=1; lc.globalCompositeOperation="destination-in";
+          const fade=lc.createLinearGradient(left,top,right,top);
+          fade.addColorStop(0,"transparent"); fade.addColorStop(.22,"white"); fade.addColorStop(.72,"white"); fade.addColorStop(1,"transparent");
+          lc.fillStyle=fade; lc.fillRect(left,top,right-left,bottom-top);
+          layer={canvas, originX, originY}; honeycombCache.set(cacheKey,layer);
+        }
+        ctx.drawImage(layer.canvas,layer.originX,layer.originY);
+      }
+      if (f.stage === 4) {
+        let bw = s * 0.3,
+          cx = p
+            ? w * 0.69
+            : Math.max(w * 0.466, w * 0.352 + bw * 0.5 + s * 0.012),
+          cy = h * (p ? 0.47 : 0.5),
+          bh = s * 0.16;
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(cx - bw / 2, cy - bh / 2, bw, bh);
+        ctx.strokeStyle = "#f26e12";
+        ctx.lineWidth = Math.max(2, s * 0.0015);
+        ctx.strokeRect(cx - bw / 2, cy - bh / 2, bw, bh);
+        ctx.fillStyle = "#f26e12";
+        ctx.font = `${s * 0.012}px RhineMono`;
+        ctx.fillText("DEMO", cx - bw * 0.43, cy - bh * 0.2);
+        ctx.fillStyle = "#f2e4d8";
+        ctx.font = `bold ${s * 0.023}px RhineBold`;
+        ctx.fillText("ACCESS DENIED", cx - bw * 0.43, cy + bh * 0.12);
+        ctx.fillStyle = "#f26e12";
+        ctx.font = `bold ${s * 0.01}px RhineBold`;
+        ctx.fillText(
+          f.deny > 1 ? "RESTRICTED / SIGNAL" : "RESTRICTED",
+          cx - bw * 0.43,
+          cy + bh * 0.34,
+        );
+      }
+      {
+        const l = w * (p ? 0.12 : 0.155),
+          r = w * (p ? 0.53 : 0.352),
+          top = h * (p ? 0.36 : 0.31),
+          bottom = h * (p ? 0.49 : 0.55),
+          rail = w * (p ? 0.25 : 0.223),
+          cw = r - l,
+          ch = bottom - top;
+        ctx.fillStyle = f.deny ? "#0b0d0c" : "#0c0f0e";
+        ctx.fillRect(l, top, cw, ch);
+        if (previewImages.smoke.complete && previewImages.smoke.naturalWidth) {
+          const img = previewImages.smoke, ratio = cw / ch, sourceRatio = img.naturalWidth / img.naturalHeight;
+          let sw = img.naturalWidth, sh = img.naturalHeight;
+          if (sourceRatio > ratio) sw = Math.max(1, Math.floor(sh * ratio)); else sh = Math.max(1, Math.floor(sw / ratio));
+          ctx.save(); ctx.globalAlpha = 65 / 255;
+          ctx.drawImage(img, Math.floor((img.naturalWidth-sw)/2), Math.floor((img.naturalHeight-sh)/2), sw, sh, l, top, cw, ch); ctx.restore();
+        }
+        ctx.strokeStyle = "#9a9f990a";
+        ctx.lineWidth = Math.max(1, s * 0.00045);
+        for (let i = 0; i < 36; i++) {
+          const yy = top + (ch * (i + 0.5)) / 36,
+            x1 = l + cw * (((i * 17) % 43) / 100),
+            x2 = Math.min(r, x1 + cw * (0.12 + (i % 7) * 0.055));
+          ctx.beginPath();
+          ctx.moveTo(x1, yy);
+          ctx.lineTo(x2, yy);
+          ctx.stroke();
+        }
+        const tagW = cw * 0.28,
+          tagH = Math.min(ch * 0.12, s * 0.024),
+          cx = (l + r) / 2;
+        ctx.fillStyle = f.deny ? "#292824" : "#e9e7e1";
+        ctx.fillRect(rail - tagW / 2, top - tagH, tagW, tagH);
+        ctx.textAlign = "center";
+        ctx.fillStyle = f.deny ? "#a9a29b" : "#52544f";
+        ctx.font = `${tagH * 0.6}px RhineMono`;
+        ctx.fillText("LOCKED", rail, top - tagH * 0.25);
+        const logoWidth = Math.min(cw * 0.56, ch * 0.96);
+        drawNiri(
+          cx - logoWidth * 0.5,
+          top + ch * 0.57 - logoWidth * 0.38,
+          logoWidth,
+          f.deny,
+        );
+        ctx.fillStyle = f.deny ? "#777a74" : "#92958f";
+        ctx.font = `${Math.min(cw * 0.045, ch * 0.075)}px RhineMono`;
+        ctx.fillText("NIRI · SEALED SECTION", cx, top + ch * 0.73);
+        ctx.fillStyle = f.deny ? "#555550" : "#666b65";
+        ctx.beginPath();
+        ctx.arc(r - cw * 0.085, top + ch * 0.15, Math.max(1, s * 0.004), 0, 7);
+        ctx.fill();
+        function centeredFit(text, y, size, maxWidth, font, color) {
+          ctx.fillStyle = color;
+          ctx.font = `${font} ${size}px ${font === "bold" ? "RhineBold" : "RhineMono"}`;
+          ctx.fillText(text, w * 0.5, y, maxWidth);
+        }
+        centeredFit(
+          "ZSY，你的会话已锁定。请出示授权口令",
+          h * (p ? 0.78 : 0.88),
+          s * (p ? 0.027 : 0.021),
+          w * (p ? 0.78 : 0.6),
+          "bold",
+          f.deny ? "#bcb3aa" : "#171a17",
+        );
+        centeredFit(
+          "ZSY, YOUR SESSION IS LOCKED. PRESENT YOUR AUTHORIZATION KEY.",
+          h * (p ? 0.8 : 0.9),
+          s * (p ? 0.012 : 0.01),
+          w * (p ? 0.78 : 0.6),
+          "normal",
+          f.deny ? "#9b928a" : "#6f716b",
+        );
+        ctx.textAlign = "left";
+      }
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, ui);
+    }
+    let fb=null, fbTex=null, fbDepth=null, fbW=0, fbH=0;
+    function ensureFramebuffer(w,h) {
+      const scale=Math.min(1,1664/Math.max(w,h)), rw=Math.round(w*scale), rh=Math.round(h*scale);
+      if (fb && rw===fbW && rh===fbH) return;
+      if (fb) { gl.deleteFramebuffer(fb); gl.deleteTexture(fbTex); gl.deleteRenderbuffer(fbDepth); }
+      fbW=rw; fbH=rh; fb=gl.createFramebuffer(); fbTex=gl.createTexture(); fbDepth=gl.createRenderbuffer();
+      gl.bindTexture(gl.TEXTURE_2D,fbTex); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,rw,rh,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+      gl.bindRenderbuffer(gl.RENDERBUFFER,fbDepth);gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,rw,rh);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,fbTex,0);gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,fbDepth);
+      if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE) throw Error('Blackout framebuffer incomplete');
+    }
+    function draw(
+      kind = "lock",
+      orient = "landscape",
+      ms = 2000,
+      text = true,
+      t = ms / 1000,
+    ) {
+      let w = orient === "landscape" ? 2560 : 1600,
+        h = orient === "landscape" ? 1600 : 2560;
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+      let f = state(ms),
+        portrait = h > w;
+      gl.viewport(0, 0, w, h);
+      gl.disable(gl.DEPTH_TEST);
+      gl.disable(gl.BLEND);
+      gl.disable(gl.CULL_FACE);
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+      gl.bindVertexArray(null);
+      if (kind === "home" || kind === "home-dark") {
+        gl.useProgram(home);
+        gl.uniform2f(un(home, "uSize"), w, h);
+        u(home, "uTime", t);
+        u(home, "uReveal", 1);
+        u(home, "uDark", kind === "home-dark" ? 1 : 0);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, cardTexture); gl.uniform1i(un(home, "uCardTex"), 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        return;
+      }
+      const recovering = !f.deny && f.recoveryGlitch > .005;
+      const postProcess = f.deny || recovering;
+      if (postProcess) { ensureFramebuffer(w,h); gl.bindFramebuffer(gl.FRAMEBUFFER,fb); gl.viewport(0,0,fbW,fbH); gl.clear(gl.DEPTH_BUFFER_BIT); }
+      gl.useProgram(stage);
+      gl.uniform2f(un(stage, "uSize"), w, h);
+      u(stage, "uDeny", f.deny);
+      u(stage, "uDenyMix", f.denyMix);
+      u(stage, "uSeconds", f.seconds);
+      u(stage, "uBirth", f.birth);
+      u(stage, "uGlitch", f.seconds < .18 ? 0 : f.burst);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if (f.birth > 0) {
+        let size = Math.round(
+            Math.min(w, h) * (portrait ? 0.88 : 1.09) * (1 + f.peel * 0.13),
+          ),
+          cx = w * (portrait ? 0.52 : 0.44),
+          cy = h * (portrait ? 0.46 : 0.495);
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthFunc(gl.LEQUAL);
+        gl.useProgram(obj);
+        let shock = f.deny ? Math.max(0, 1-f.seconds/.185)**2 : 0;
+        let [model, mvp] = matrices(t, portrait, f.burst, shock, f.birth);
+        for (let i = 0; i < 16; i += 4) {
+          mvp[i] = (mvp[i] * size) / w + mvp[i + 3] * ((2 * cx) / w - 1);
+          mvp[i + 1] =
+            (mvp[i + 1] * size) / h + mvp[i + 3] * (1 - (2 * cy) / h);
+        }
+        gl.uniformMatrix4fv(un(obj, "uModel"), false, model);
+        gl.uniformMatrix4fv(un(obj, "uMvp"), false, mvp);
+        for (let [n, v] of Object.entries({
+          uTime: t,
+          uPulse: f.pulse,
+          uBirth: f.birth,
+          uVerify: f.scan,
+          uExit: f.peel,
+          uAlert: f.denyMix,
+          uDenyStrength: f.burst,
+        }))
+          u(obj, n, v);
+        gl.bindVertexArray(vao);
+        gl.drawElementsInstanced(gl.TRIANGLES, indices.length / 4, gl.UNSIGNED_INT, 0, Number(A["instances.txt"]));
+        gl.bindVertexArray(null);
+        gl.disable(gl.DEPTH_TEST);
+        gl.viewport(0, 0, w, h);
+      }
+      if (postProcess) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,w,h); gl.useProgram(blackout);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,fbTex); gl.uniform1i(un(blackout,'uScene'),0);
+        gl.uniform2f(un(blackout,'uSize'),w,h); u(blackout,'uSeconds',f.seconds+(recovering ? .30 : 0));
+        u(blackout,'uBurst',recovering ? 0 : Math.min(1,.58+f.burst));
+        u(blackout,'uSeverity',recovering ? f.recoveryGlitch : (f.deny===2?1:.67));
+        gl.drawArrays(gl.TRIANGLES,0,3);
+      }
+      if (text) {
+        simulatedUI(w, h, f);
+        gl.useProgram(hud);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.uniform1i(un(hud, "uUi"), 0);
+        gl.uniform2f(un(hud, "uSize"), w, h);
+        u(hud, "uOpacity", 1);
+        gl.uniform4f(
+          un(hud, "uUiPhases"),
+          f.foundation,
+          f.card,
+          f.telemetry,
+          f.caption,
+        );
+        u(hud, "uScanHead", f.scanHead);
+        u(hud, "uScanOpacity", f.scanOpacity);
+        u(hud, "uScan", f.scan);
+        u(hud, "uScanSeconds", f.seconds);
+        u(hud, "uWarningAge", f.deny ? f.seconds : -1);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.disable(gl.BLEND);
+      }
+      if (text && f.snapshot > 0.001) {
+        gl.useProgram(snapshot);
+        gl.uniform2f(un(snapshot, "uSize"), w, h);
+        gl.uniform4f(un(snapshot, "uFlight"), f.snapshotTravel, f.snapshot, f.snapshotScan, f.snapshotCorners);
+        u(snapshot, "uDesat", f.snapshotDesat);
+        u(snapshot, "uTime", t);
+        u(snapshot, "uReveal", 1);
+        u(snapshot, "uDark", 1);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, cardTexture);
+        gl.uniform1i(un(snapshot, "uCardTex"), 0);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.disable(gl.BLEND);
+      }
+    }
+    let playing = true,
+      demoMode = false,
+      idleTime = 0,
+      at = 2000,
+      last = 0,
+      scene = "lock",
+      orientation = "landscape";
+    const seek = document.querySelector("#seek");
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (playing) {
+        if (last) {
+          let dt = Math.min(now - last, 100);
+          idleTime += dt / 1000;
+          if (demoMode) {
+            at += dt;
+            if (at >= 18200) {
+              at = 18199;
+              playing = false;
+              document.querySelector("#play").textContent = "播放";
+            }
+          }
+        }
+        last = now;
+        seek.value = at;
+        document.querySelector("#clock").textContent =
+          (at / 1000).toFixed(1) + "s";
+        draw(scene, orientation, at, true, demoMode ? at / 1000 : idleTime);
+      } else last = 0;
+    }
+    document.querySelector("#play").onclick = (e) => {
+      playing = !playing;
+      e.target.textContent = playing ? "暂停" : "播放";
+    };
+    document.querySelector("#demo").onclick = () => {
+      scene = "lock";
+      document.querySelector("#sceneSelect").value = scene;
+      at = 0;
+      demoMode = true;
+      playing = true;
+      document.querySelector("#play").textContent = "暂停";
+    };
+    document.querySelector("#stageSelect").onchange = (e) => {
+      at = +e.target.value;
+      demoMode = true;
+      scene = "lock";
+      document.querySelector("#sceneSelect").value = scene;
+      seek.value = at;
+      playing = false;
+      document.querySelector("#play").textContent = "播放";
+      document.querySelector("#clock").textContent =
+        (at / 1000).toFixed(1) + "s";
+      draw(scene, orientation, at, true);
+    };
+    seek.oninput = () => {
+      at = +seek.value;
+      demoMode = true;
+      playing = false;
+      document.querySelector("#play").textContent = "播放";
+      document.querySelector("#clock").textContent =
+        (at / 1000).toFixed(1) + "s";
+      draw(scene, orientation, at, true);
+    };
+    document.querySelector("#sceneSelect").onchange = (e) => {
+      scene = e.target.value;
+      draw(scene, orientation, at, true);
+    };
+    document.querySelector("#orientation").onchange = (e) => {
+      orientation = e.target.value;
+      document
+        .querySelector(".frame")
+        .classList.toggle("portrait", orientation === "portrait");
+      draw(scene, orientation, at, true);
+    };
+    document.querySelector("#export").onclick = () => {
+      draw(scene, orientation, 2000, false, 0);
+      let a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = `rhine-${scene}-${orientation}.png`;
+      a.click();
+      draw(scene, orientation, at, true);
+    };
+    let ext = gl.getExtension("WEBGL_debug_renderer_info");
+    window.archive = {
+      draw,
+      stop: () => {
+        playing = false;
+      },
+      renderer: ext
+        ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)
+        : gl.getParameter(gl.RENDERER),
+      hashes: DATA.sha256,
+      assetsReady: () => assetsReady,
+      triangles: indices.length / 12 * Number(A["instances.txt"]),
+      instances: Number(A["instances.txt"]),
+      error: () => gl.getError(),
+      benchmark: (kind, orient, n = 20) => {
+        let samples = [],
+          pixel = new Uint8Array(4);
+        for (let i = 0; i < n; i++) {
+          let start = performance.now();
+          draw(kind, orient, 2000, false, i / 120);
+          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+          samples.push(performance.now() - start);
+        }
+        samples.sort((a, b) => a - b);
+        return {
+          kind: "synchronized draw + readback wall time, not GPU-only",
+          n,
+          p50: samples[Math.floor(n * 0.5)],
+          p95: samples[Math.floor(n * 0.95)],
+        };
+      },
+    };
+    requestAnimationFrame(loop);
+  </script>
+</html>

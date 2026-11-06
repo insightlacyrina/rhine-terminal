@@ -1,0 +1,28 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:label="Rhine Terminal" android:icon="@drawable/ic_launcher" android:theme="@style/AppTheme" android:supportsRtl="true">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <activity android:name=".PreviewActivity" android:exported="false" />
+        <activity android:name=".FailureAccessActivity" android:exported="false" />
+        <receiver android:name=".NativeFailureReceiver" android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN" android:label="密码失败变色（可选）"
+            android:description="@string/native_failure_admin_description">
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/native_failure_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <action android:name="android.app.action.ACTION_PASSWORD_FAILED" />
+                <action android:name="android.app.action.ACTION_PASSWORD_SUCCEEDED" />
+            </intent-filter>
+        </receiver>
+        <service android:name=".RhineWallpaperService" android:exported="true" android:label="Rhine Terminal" android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter><action android:name="android.service.wallpaper.WallpaperService"/></intent-filter>
+            <meta-data android:name="android.service.wallpaper" android:resource="@xml/wallpaper"/>
+        </service>
+        <service android:name=".HomeWallpaperService" android:exported="true"
+            android:label="@string/home_wallpaper_name" android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter><action android:name="android.service.wallpaper.WallpaperService" /></intent-filter>
+            <meta-data android:name="android.service.wallpaper" android:resource="@xml/home_wallpaper" />
+        </service>
+    </application>
+</manifest>

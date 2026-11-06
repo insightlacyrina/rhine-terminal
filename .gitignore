@@ -1,0 +1,15 @@
+.gradle/
+.tools/
+**/build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+outputs/
+references/
+/HANDOFF.md
+*.log
+*.jks
+*.keystore
+.env
