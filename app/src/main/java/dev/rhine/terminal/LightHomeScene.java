@@ -19,7 +19,7 @@ public final class LightHomeScene {
         #version 300 es
         precision highp float;
         uniform vec2 uSize;
-        uniform float uTime, uReveal, uDark;
+        uniform float uTime, uReveal, uDark, uPhone;
         uniform sampler2D uCardTex;
         in vec2 vUv;
         out vec4 fragColor;
@@ -53,7 +53,10 @@ public final class LightHomeScene {
             vec2 landscape=mix(vec2(.53,.485),vec2(.862,.686),s);
             vec2 upright=mix(vec2(.23,.295),vec2(.75,.473),s);
             vec2 drift=vec2(sin(s*6.2831853+uTime*.22),cos(s*6.2831853+uTime*.19))*.002;
-            return mix(landscape,upright,portrait)+vec2(.025,.018)*(1.0-appear)+drift;
+            vec2 phoneWide=mix(vec2(.73,.32),vec2(.89,.66),s);
+            vec2 phoneTall=mix(vec2(.19,.25),vec2(.78,.39),s);
+            vec2 base=mix(mix(landscape,upright,portrait),mix(phoneWide,phoneTall,portrait),uPhone);
+            return base+vec2(.025,.018)*(1.0-appear)+drift;
         }
         // Softbox directions and colours adapted from the upstream studio probe.
         vec3 studio(vec3 direction) {
@@ -89,6 +92,7 @@ public final class LightHomeScene {
                          vec3(.043,.043,.047)*(1.0-vignette*.32)+spill*vec3(.020,.019,.017),dark);
             // The quiet graphite motif never intrudes on the status area.
             float motif=chemistry(p+vec2(.12,-.08+uTime*.008))*dark*.025*smoothstep(.10,.20,vUv.y);
+            if (uPhone>.5) motif*=1.0-smoothstep(.82,.92,vUv.y);
             col+=motif*vec3(.56,.62,.50);
             col+=(noise(gl_FragCoord.xy)-.5)*.003;
             // The actual upstream artwork is mapped onto the 104:74.88:3.2 card.
@@ -113,7 +117,7 @@ public final class LightHomeScene {
                 float appear=smoothstep(.25+f*.07,.55+f*.07,uReveal)*streamFade(s);
                 vec2 uvCenter=cardCenter(s,portrait,appear);
                 vec2 center=(uvCenter-.5)*uSize/unit;
-                float width=mix(.30,.272,portrait)*max(appear,.001);
+                float width=mix(mix(.30,.272,portrait),mix(.24,.30,portrait),uPhone)*max(appear,.001);
                 // Skip path trigonometry and intersection outside each card's bounds.
                 if (abs(p.x-center.x)>width*.78 || abs(p.y-center.y)>width*.78 || appear<.001) continue;
                 vec3 halfSize=vec3(width*.5,width*.36,width*(3.2/104.0)*.5);

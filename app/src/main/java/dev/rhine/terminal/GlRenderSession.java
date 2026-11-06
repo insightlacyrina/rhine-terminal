@@ -44,6 +44,7 @@ final class GlRenderSession {
     private volatile int battery = -1;
     private volatile boolean plugged;
     private boolean showHomeTelemetry = true, lightHome = true, darkGallery, carbonConsole;
+    private boolean phoneLayout;
     private String lockDisplayName = LockDisplayName.DEFAULT;
     private final ArchiveTimeline.FrameState lockFrame = new ArchiveTimeline.FrameState();
     private long wakeEpoch, pulseEpoch, demoEpoch, pendingAlert;
@@ -175,6 +176,7 @@ final class GlRenderSession {
     void close() { if(closed)return; closed=true; requestedActive=false; destroySurface(); handler.post(() -> { active=false; thread.quitSafely(); }); }
     private void readPreferences() {
         requestedRate = readTargetFps();
+        phoneLayout = "phone".equals(prefs.getString("wallpaper_layout", "tablet"));
         if (home) {
             showHomeTelemetry = prefs.getBoolean("home_telemetry", true);
             String scene = prefs.getString("home_scene", CarbonHomeRenderer.STYLE);
@@ -242,9 +244,9 @@ final class GlRenderSession {
                 Canvas canvas = null;
                 try { canvas = surface.lockCanvas(null); if (canvas != null) {
                     if (home) {
-                        ArchiveFallback.drawHome(canvas, homeFallbackPaint, lightHome, darkGallery || carbonConsole);
+                        ArchiveFallback.drawHome(canvas, homeFallbackPaint, lightHome, darkGallery || carbonConsole, phoneLayout);
                     } else {
-                        cpu.draw(canvas,lockFrame,battery,plugged,showLocked,prefs.getBoolean("archive_clock",true),lockDisplayName);
+                        cpu.draw(canvas,lockFrame,battery,plugged,showLocked,prefs.getBoolean("archive_clock",true),lockDisplayName,phoneLayout);
                     }
                     presented=true;
                 } }
@@ -256,9 +258,9 @@ final class GlRenderSession {
                         homeUnfoldPending = false;
                     }
                     homeGpu.render(nanos, width, height, homeUnfoldStart, homeUnfoldFromVisible, requestedRate == 1,
-                            showHomeTelemetry, lightHome, darkGallery, carbonConsole, battery, plugged);
+                            showHomeTelemetry, lightHome, darkGallery, carbonConsole, battery, plugged, phoneLayout);
                 } else {
-                    gpu.render(nanos, inputX, inputY, showLocked, battery, plugged, requestedRate == 1, lockFrame, lockDisplayName);
+                    gpu.render(nanos, inputX, inputY, showLocked, battery, plugged, requestedRate == 1, lockFrame, lockDisplayName, phoneLayout);
                 }
                 EGLExt.eglPresentationTimeANDROID(display, eglSurface, nanos);
                 presented = EGL14.eglSwapBuffers(display, eglSurface);

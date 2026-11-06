@@ -25,7 +25,7 @@ final class HomeConsoleLayer {
     private int layoutWidth,layoutHeight,bodyStart,bodyCount,promptStart,promptCount,headerCount;
     private int scissorX,scissorY,scissorWidth,scissorHeight;
     private float lineHeight,panelLeft,panelRight,panelTop,panelBottom,panelBorder,panelRadius;
-    private boolean geometryDirty=true;
+    private boolean geometryDirty=true, layoutPhone;
     private long nextLine,lastArrival;
     private final Typeface consoleFace;
     HomeConsoleLayer() { this(null); }
@@ -76,12 +76,12 @@ final class HomeConsoleLayer {
         }
         if(pc==0)nextLine=0;else if(!reduced&&now-nextLine>STEP*8)nextLine=now+STEP;
     }
-    void render(long frameNanos,int width,int height,boolean reducedMotion){
+    void render(long frameNanos,int width,int height,boolean reducedMotion,boolean phoneLayout){
         if(program==0||width<=0||height<=0)return;
         advance(frameNanos,reducedMotion);
         glDisable(GL_DEPTH_TEST);glDisable(GL_CULL_FACE);glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
         glUseProgram(program);glBindVertexArray(vao);glBindBuffer(GL_ARRAY_BUFFER,vbo);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,atlas);
-        if(geometryDirty||width!=layoutWidth||height!=layoutHeight) rebuildGeometry(width,height);
+        if(geometryDirty||width!=layoutWidth||height!=layoutHeight||phoneLayout!=layoutPhone) rebuildGeometry(width,height,phoneLayout);
         glUniform1f(offsetY,0f);glUniform1f(solid,1f);
         glUniform4f(bounds,panelLeft,height-panelBottom,panelRight,height-panelTop);glUniform1f(radius,panelRadius);glUniform1f(ring,panelBorder);
         glUniform4f(color,.21f,.27f,.19f,.75f);drawRange(0,1);
@@ -99,12 +99,18 @@ final class HomeConsoleLayer {
     }
 
     /** Regenerate only for incoming rows and viewport changes, never for motion. */
-    private void rebuildGeometry(int width,int height){
+    private void rebuildGeometry(int width,int height,boolean phoneLayout){
+        layoutPhone=phoneLayout;
         layoutWidth=width;layoutHeight=height;geometryDirty=false;
         boolean landscape=width>=height;
         float left=width*(landscape?.04f:.05f),right=width*(landscape?.50f:.95f);
         float top=height*(landscape?.135f:.46f),bottom=height*.90f;
-        float fh=Math.max(9f,Math.min(24f,height*(landscape?.016f:.012f)));
+        if(phoneLayout) {
+            left=width*(landscape?.035f:.06f); right=width*(landscape?.32f:.94f);
+            top=height*(landscape?.13f:.47f); bottom=height*(landscape?.86f:.83f);
+        }
+        float fh=phoneLayout ? Math.max(15f,Math.min(42f,Math.min(width,height)*.026f))
+                : Math.max(9f,Math.min(24f,height*(landscape?.016f:.012f)));
         float charWidth=fh*.62f,padding=Math.max(8f,fh*1.3f), headerHeight=fh*2.2f;
         lineHeight=fh*1.2f;
         float border=Math.max(1f,height*.001f);

@@ -35,7 +35,7 @@ final class CarbonHomeRenderer {
         }
     }
 
-    void render(long now,int width,int height,boolean reduced,float reveal) {
+    void render(long now,int width,int height,boolean reduced,float reveal,boolean phoneLayout) {
         if (start==0) start=now;
         telemetry.setActive(true);
         String[] snapshot=telemetry.latest();
@@ -47,8 +47,8 @@ final class CarbonHomeRenderer {
         glDisable(GL_SCISSOR_TEST);
         glDisable(GL_CULL_FACE);
         glDisable(GL_DEPTH_TEST);
-        gallery.draw(0,0,width,height,reduced ? 0 : (now-start)*1e-9f,reveal,true);
-        console.render(now,width,height,reduced);
+        gallery.draw(0,0,width,height,reduced ? 0 : (now-start)*1e-9f,reveal,true,phoneLayout);
+        console.render(now,width,height,reduced,phoneLayout);
     }
 
     void frameSubmitted(long now) {

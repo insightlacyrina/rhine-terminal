@@ -67,6 +67,13 @@ public final class ArchiveLockOverlay {
     void draw(Canvas c,float width,float height,int stage,int level,boolean nativeFailure,
               String device,int batteryPct,boolean plugged,boolean locked,boolean showClock,int biometricDemo,
               String displayName) {
+        draw(c,width,height,stage,level,nativeFailure,device,batteryPct,plugged,locked,showClock,biometricDemo,displayName,false);
+    }
+
+    void draw(Canvas c,float width,float height,int stage,int level,boolean nativeFailure,
+              String device,int batteryPct,boolean plugged,boolean locked,boolean showClock,int biometricDemo,
+              String displayName,boolean phoneLayout) {
+        if (phoneLayout) { drawPhone(c,width,height,stage,level,nativeFailure,device,batteryPct,plugged,locked,showClock,biometricDemo,displayName); return; }
         DeviceState state = new DeviceState(device, batteryPct, plugged, locked);
         if (width<=0 || height<=0) return;
 
@@ -98,7 +105,7 @@ public final class ArchiveLockOverlay {
             line(c,railX,tickY,railX+u*.009f,tickY,muted,Math.max(1,u*.0007f));
         }
         if (stage == ArchiveTimeline.FRAME) {
-            if (showClock) clock(c,width,height,portrait,u,ink,muted);
+            if (showClock) clock(c,width,height,portrait,u,ink,muted,false);
             if (state.locked) lockMark(c,width,height,portrait,denied,u,displayName);
             c.restore();
             return;
@@ -117,7 +124,7 @@ public final class ArchiveLockOverlay {
                     withAlpha(denied?PAPER:INK,.35f*alpha),Math.max(1,u*.0006f));
             circle(c,anchorX,anchorY,u*.002f,muted);
         }
-        if (showClock) clock(c,width,height,portrait,u,ink,muted);
+        if (showClock) clock(c,width,height,portrait,u,ink,muted,false);
         if (stage>=1) {
             float a=alpha;
             round(c,panelX,panelY,panelX+panelW,panelY+panelH,u*.008f,withAlpha(denied?0xff29231f:PAPER,.80f*a));
@@ -162,6 +169,72 @@ public final class ArchiveLockOverlay {
         if (state.locked) lockMark(c,width,height,portrait,denied,u,displayName);
         c.restore();
     }
+    /** Dedicated compact phone layout; the top and lower system areas stay clear. */
+    private void drawPhone(Canvas c,float w,float h,int stage,int level,boolean nativeFailure,
+                           String device,int battery,boolean plugged,boolean locked,boolean showClock,
+                           int biometricDemo,String displayName) {
+        if(w<=0 || h<=0) return;
+        boolean portrait=h>w, denied=stage==ArchiveTimeline.DENIED;
+        float u=Math.min(w,h), x=w*(portrait?.08f:.055f), top=h*(portrait?.265f:.25f);
+        int ink=denied?PAPER:INK, muted=denied?0xffb8a79a:MUTED;
+        float micro=Math.max(9,u*.016f), text=Math.max(12,u*.024f);
+        c.save();
+        float rail=w*(portrait?.27f:.13f);
+        if(locked) line(c,rail,0,rail,h,denied?0x998f8379:0xff252522,Math.max(1,u*.001f));
+        text(c,"RHINE LAB",x,top,text*1.25f,BOLD,ink);
+        text(c,"INSTRUMENT ARCHIVE",x,top+u*.035f,micro,MONO,muted);
+        line(c,x,top+u*.045f,x+u*.25f,top+u*.045f,ink,Math.max(1,u*.001f));
+        if(showClock) clock(c,w,h,portrait,u,ink,muted,true);
+        if(stage==ArchiveTimeline.FRAME) { c.restore(); return; }
+        float l=w*(portrait?.08f:.06f), r=w*(portrait?.40f:.275f);
+        float t=h*(portrait?.385f:.36f), b=h*(portrait?.49f:.64f);
+        if(locked) {
+            rect(c,l,t,r,b,0xff0c0f0e);
+            if(smoke!=null) { P.setAlpha(80); c.drawBitmap(smoke,null,new RectF(l,t,r,b),P); P.setAlpha(255); }
+            float logo=Math.min((r-l)*.60f,(b-t)*.9f);
+            NiriWordmark.draw(c,(l+r-logo)*.5f,(t+b)*.5f-logo*.38f,logo,0xfff2f1eb,0xff0c0f0e);
+            centered(c,"NIRI · SEALED SECTION",(l+r)*.5f,b-u*.016f,Math.min(micro,(r-l)*.045f),MONO,0xff92958f);
+            float tagW=u*.11f, tagH=u*.023f;
+            rect(c,rail-tagW*.5f,t-tagH,rail+tagW*.5f,t,denied?0xff292824:0xffe9e7e1);
+            centered(c,"LOCKED",rail,t-tagH*.24f,tagH*.60f,MONO,muted);
+        }
+        float px=w*(portrait?.08f:.67f), py=h*(portrait?.575f:.51f);
+        float pw=w*(portrait?.84f:.27f), ph=h*(portrait?.085f:.22f);
+        round(c,px,py,px+pw,py+ph,u*.008f,denied?0xff29231f:0xeef4efec);
+        strokeRect(c,px,py,px+pw,py+ph,withAlpha(ink,.25f),Math.max(1,u*.001f));
+        float inset=u*.025f, row=py+u*.04f;
+        text(c,"DEVICE / TELEMETRY",px+inset,row,micro,MONO,muted);
+        String label=device==null?"ANDROID":device.toUpperCase(Locale.US);
+        P.setTypeface(BOLD); P.setTextSize(text);
+        while(label.length()>1 && P.measureText(label)>pw-2*inset) label=label.substring(0,label.length()-1);
+        text(c,label,px+inset,row+u*.045f,text,BOLD,ink);
+        String power=battery<0?"BATTERY --":String.format(Locale.US,"BATTERY %d%%",Math.min(100,battery));
+        if(plugged) power+=" / EXT POWER";
+        text(c,power,px+inset,row+u*.08f,micro,MONO,muted);
+        if(stage==ArchiveTimeline.SCAN) {
+            float cx=w*(portrait?.65f:.47f), cy=h*(portrait?.44f:.48f);
+            text(c,"VISUAL SCAN",cx-u*.0715f,cy+u*.096f,micro,MONO,ink);
+        }
+        if(denied) {
+            drawHoneycomb(c,w*.045f,h*(portrait?.512f:.69f),w*(portrait?.27f:.135f),u*.105f);
+            phoneWarning(c,w,h,portrait,level>1,nativeFailure,biometricDemo,u);
+        }
+        if(locked) {
+            float cy=h*(portrait?.71f:.83f), max=w*(portrait?.84f:.72f);
+            fitCentered(c,displayName+"，你的会话已锁定。请出示授权口令",w*.5f,cy,u*.028f,max,BOLD,ink);
+            fitCentered(c,displayName+", YOUR SESSION IS LOCKED. PRESENT YOUR AUTHORIZATION KEY.",w*.5f,cy+u*.035f,u*.013f,max,MONO,muted);
+        }
+        c.restore();
+    }
+    private void phoneWarning(Canvas c,float w,float h,boolean portrait,boolean second,boolean nativeFailure,int biometricDemo,float u) {
+        float cx=w*(portrait?.65f:.47f), cy=h*(portrait?.44f:.48f), bw=u*.30f, bh=u*.16f;
+        rect(c,cx-bw/2,cy-bh/2,cx+bw/2,cy+bh/2,Color.BLACK);
+        strokeRect(c,cx-bw/2,cy-bh/2,cx+bw/2,cy+bh/2,ORANGE,Math.max(2,u*.0015f));
+        String source=nativeFailure?"PIN / PASSWORD":biometricDemo==1?"DEMO / FACE":biometricDemo==2?"DEMO / FINGERPRINT":biometricDemo==3?"DEMO / SHORT CONTACT":"DEMO";
+        text(c,source,cx-bw*.43f,cy-bh*.20f,u*.014f,MONO,ORANGE);
+        text(c,"ACCESS DENIED",cx-bw*.43f,cy+bh*.12f,u*.023f,BOLD,0xfff2e4d8);
+        text(c,second?"RESTRICTED / SIGNAL":"RESTRICTED",cx-bw*.43f,cy+bh*.34f,u*.011f,BOLD,ORANGE);
+    }
     /** Visual identification only: the system remains responsible for unlocking. */
     private void lockMark(Canvas c,float w,float h,boolean portrait,boolean denied,float u,String displayName) {
         float l=w*(portrait?.12f:.155f), r=w*(portrait?.53f:.352f);
@@ -205,15 +278,15 @@ public final class ArchiveLockOverlay {
         if (measured>maxWidth) size*=maxWidth/measured;
         centered(c,s,x,y,size,face,color);
     }
-    private void clock(Canvas c,float w,float h,boolean portrait,float u,int ink,int muted) {
+    private void clock(Canvas c,float w,float h,boolean portrait,float u,int ink,int muted,boolean phoneLayout) {
         Date now=new Date();
         String time=new SimpleDateFormat("HH:mm",Locale.getDefault()).format(now);
         String date=new SimpleDateFormat("EEE  ·  dd MMM yyyy",Locale.getDefault()).format(now).toUpperCase(Locale.getDefault());
-        float right=w*(portrait?.91f:.94f), baseline=h*(portrait?.185f:.185f);
+        float right=w*(portrait?.91f:.94f), baseline=h*(phoneLayout&&!portrait?.26f:.185f);
         float size=u*(portrait?.09f:.105f);
         P.setTypeface(LIGHT); P.setTextSize(size);
         text(c,time,right-P.measureText(time),baseline,size,LIGHT,ink);
-        float small=u*.011f; P.setTypeface(MONO); P.setTextSize(small);
+        float small=u*(phoneLayout?.017f:.011f); P.setTypeface(MONO); P.setTextSize(small);
         float tracking=u*.0012f, cursor=right-P.measureText(date)-tracking*(date.length()-1);
         for(int i=0;i<date.length();i++) {
             String letter=date.substring(i,i+1);
@@ -239,9 +312,13 @@ public final class ArchiveLockOverlay {
     }
     /** A quiet, unframed diagnostic texture in the empty left margin. */
     private void honeycomb(Canvas c,float w,float h,boolean portrait,float u) {
-        if(hexShader==null)return;
         float left=w*(portrait?.045f:.025f), top=h*(portrait?.52f:.59f);
-        float right=Math.min(w*(portrait?.24f:.15f),left+u*.22f), bottom=top+u*.13f;
+        float right=Math.min(w*(portrait?.24f:.15f),left+u*.22f);
+        drawHoneycomb(c,left,top,right,u*.13f);
+    }
+    private void drawHoneycomb(Canvas c,float left,float top,float right,float height) {
+        if(hexShader==null)return;
+        float bottom=top+height;
         // Preserve the source PNG alpha; a soft mask removes any rectangular plate edge.
         int layer=c.saveLayer(left,top,right,bottom,null);
         P.setStyle(Paint.Style.FILL); P.setColor(Color.WHITE); P.setAlpha(51); P.setShader(hexShader);

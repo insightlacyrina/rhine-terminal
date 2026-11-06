@@ -22,8 +22,13 @@ final class ArchiveFallback {
 
     void draw(Canvas canvas, ArchiveTimeline.FrameState frame, int battery, boolean plugged,
               boolean locked, boolean clock, String displayName) {
+        draw(canvas,frame,battery,plugged,locked,clock,displayName,false);
+    }
+
+    void draw(Canvas canvas, ArchiveTimeline.FrameState frame, int battery, boolean plugged,
+              boolean locked, boolean clock, String displayName, boolean phoneLayout) {
         if (frame.stage == ArchiveTimeline.HOME) {
-            drawHome(canvas,paint,true,false);
+            drawHome(canvas,paint,true,false,phoneLayout);
             return;
         }
         int w=canvas.getWidth(), h=canvas.getHeight();
@@ -36,8 +41,8 @@ final class ArchiveFallback {
             double a=2*Math.PI*i/96;
             float curveX = (float)Math.cos(a);
             float curveY = (float)(.95*Math.sin(a)*Math.cos(a) + .11*Math.sin(a));
-            float x=w*(portrait?.51f:.45f)+side*.36f*(portrait ? .73f*curveX+.68f*curveY : curveX);
-            float y=h*(portrait?.46f:.495f)-side*.36f*(portrait ? .68f*curveX-.73f*curveY : curveY);
+            float x=w*(phoneLayout?(portrait?.65f:.47f):(portrait?.51f:.45f))+side*(phoneLayout&&portrait?.30f:.36f)*(portrait ? .73f*curveX+.68f*curveY : curveX);
+            float y=h*(phoneLayout?(portrait?.44f:.48f):(portrait?.46f:.495f))-side*(phoneLayout&&portrait?.30f:.36f)*(portrait ? .68f*curveX-.73f*curveY : curveY);
             if (i==0) loop.moveTo(x,y); else loop.lineTo(x,y);
         }
         paint.setStyle(Paint.Style.STROKE);
@@ -52,12 +57,16 @@ final class ArchiveFallback {
             canvas.drawRect(1,1,w-1,h-1,paint);
         }
         paint.setStyle(Paint.Style.FILL);
-        overlay.draw(canvas,w,h,frame.stage,frame.intensity,frame.nativeFailure,Build.MODEL,battery,plugged,locked,clock,frame.biometricDemo,displayName);
+        overlay.draw(canvas,w,h,frame.stage,frame.intensity,frame.nativeFailure,Build.MODEL,battery,plugged,locked,clock,frame.biometricDemo,displayName,phoneLayout);
     }
 
     static void drawHome(Canvas canvas, Paint paint, boolean light, boolean darkGallery) {
+        drawHome(canvas,paint,light,darkGallery,false);
+    }
+
+    static void drawHome(Canvas canvas, Paint paint, boolean light, boolean darkGallery, boolean phoneLayout) {
         if (!light && !darkGallery) {
-            HomeWallpaperRenderer.drawFallback(canvas,paint);
+            HomeWallpaperRenderer.drawFallback(canvas,paint,phoneLayout);
             return;
         }
         canvas.drawColor(darkGallery?0xff0b0b0c:0xffe4dfdc);
@@ -65,8 +74,10 @@ final class ArchiveFallback {
         float s=Math.min(w,h);
         boolean portrait=h>w;
         for (int i=4;i>=0;i--) {
-            float x=w*((portrait?.25f:.57f)+i*(portrait?.125f:.077f));
-            float y=h*((portrait?.48f:.57f)+i*(portrait?.057f:.052f));
+            float x=phoneLayout ? w*((portrait?.19f:.73f)+i*(portrait?.1475f:.04f))
+                    : w*((portrait?.25f:.57f)+i*(portrait?.125f:.077f));
+            float y=phoneLayout ? h*((portrait?.25f:.32f)+i*(portrait?.035f:.085f))
+                    : h*((portrait?.48f:.57f)+i*(portrait?.057f:.052f));
             canvas.save();
             canvas.rotate(11f-i*11f,x,y);
             paint.setStyle(Paint.Style.FILL);

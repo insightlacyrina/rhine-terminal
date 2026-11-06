@@ -46,8 +46,10 @@ public final class MainActivity extends Activity {
         Button nativeOptions = button("查看说明与授权", false); nativeCard.addView(nativeOptions);
         nativeOptions.setOnClickListener(v -> startActivity(new Intent(this, FailureAccessActivity.class)));
         label("个性化", "PERSONALIZATION");
+        choice("排版模式", new String[]{"平板模式", "手机模式（一加 13）"},
+                new String[]{"tablet", "phone"}, "wallpaper_layout");
         lockDisplayNameSetting();
-        toggle("显示主题时钟", "默认开启。三星原生时钟可在系统锁屏编辑中由你移除。", "archive_clock", true);
+        toggle("显示主题时钟", "关闭后为设备的系统时钟留出空间。", "archive_clock", true);
         toggle("预览音效", "在完整动效演示中播放环境音与状态提示音。", "preview_sound", false);
         toggle("设备运动", "轻微倾斜时移动画面；仅在壁纸可见时使用传感器", "motion", false);
         toggle("减少动态效果", "降低动画频率并关闭运动响应", "reduced_motion", false);

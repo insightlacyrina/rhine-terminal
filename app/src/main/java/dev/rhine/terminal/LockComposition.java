@@ -55,7 +55,7 @@ public final class LockComposition {
         uniform sampler2D uUi;
         uniform vec2 uSize;
         uniform vec4 uUiPhases;
-        uniform float uScan, uScanHead, uScanOpacity, uScanSeconds, uWarningAge;
+        uniform float uScan, uScanHead, uScanOpacity, uScanSeconds, uWarningAge, uPhone;
         float ringLine(float r, float radius, float pixel) {
             return 1.0-smoothstep(.52*pixel,1.48*pixel,abs(r-radius));
         }
@@ -70,15 +70,22 @@ public final class LockComposition {
             vec2 cardMax=portrait?vec2(.53,.49):vec2(.352,.55);
             vec2 panelMin=portrait?vec2(.085,.555):vec2(.47,.67);
             vec2 panelMax=portrait?vec2(.915,.690):vec2(.90,.80);
+            if (uPhone>.5) {
+                cardMin=portrait?vec2(.08,.375):vec2(.06,.34);
+                cardMax=portrait?vec2(.40,.49):vec2(.275,.64);
+                panelMin=portrait?vec2(.08,.575):vec2(.67,.51);
+                panelMax=portrait?vec2(.92,.66):vec2(.94,.73);
+            }
             bool inCard=all(greaterThanEqual(p,cardMin-.001)) && all(lessThanEqual(p,cardMax+.001));
             bool inPanel=all(greaterThanEqual(p,panelMin-.001)) && all(lessThanEqual(p,panelMax+.001));
-            bool inCaption=p.y>(portrait?.751:.848) && p.x>.24 && p.x<.76;
+            bool inCaption=p.y>(uPhone>.5?(portrait?.69:.80):(portrait?.751:.848)) && p.x>(uPhone>.5?.07:.24) && p.x<(uPhone>.5?.93:.76);
             float opacity=inCard?phases.y:inPanel?phases.z:inCaption?phases.w:phases.x;
             vec4 ui=texture(uUi,p)*opacity;
             float s=min(uSize.x,uSize.y);
             if (uWarningAge>=0.0) {
                 float x=portrait?uSize.x*.69:max(uSize.x*.466,uSize.x*.352+s*.162);
-                vec2 q=(p*uSize-vec2(x,uSize.y*(portrait?.47:.50)))/s;
+                if (uPhone>.5) x=uSize.x*(portrait?.65:.47);
+                vec2 q=(p*uSize-vec2(x,uSize.y*(uPhone>.5?(portrait?.44:.48):(portrait?.47:.50))))/s;
                 if (abs(q.x)<.145 && abs(q.y)<.075) {
                     if (q.y>.004) ui.rgb*=q.y>.036 ? step(.50,uWarningAge) : step(.26,uWarningAge);
                     float y=q.y+.052;
@@ -93,7 +100,7 @@ public final class LockComposition {
             vec4 marks=vec4(0);
             vec4 sweep=vec4(0);
             if(uScanOpacity>0.0) {
-                vec2 center=vec2(portrait?.66:.43,portrait?.46:.48);
+                vec2 center=uPhone>.5?vec2(portrait?.65:.47,portrait?.44:.48):vec2(portrait?.66:.43,portrait?.46:.48);
                 float appear=.92+.08*uScanOpacity;
                 vec2 scanPoint=(vUv-center)*uSize/(s*appear);
                 float r=length(scanPoint);

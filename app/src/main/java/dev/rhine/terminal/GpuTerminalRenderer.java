@@ -31,13 +31,13 @@ public final class GpuTerminalRenderer {
     private int mvpLocation, modelLocation, timeLocation, alertLocation, pulseLocation;
     private int birthLocation, verifyLocation, peelLocation, severityLocation;
     private int stageSize, stageDeny, stageDenyMix, stageSeconds, stageBirth, stageGlitch;
-    private int hudTexture, hudSize, hudPhases, hudScan, hudScanHead, hudScanOpacity, hudScanSeconds, hudWarningAge;
+    private int hudTexture, hudSize, hudPhases, hudScan, hudScanHead, hudScanOpacity, hudScanSeconds, hudWarningAge, hudPhone;
     private Bitmap uiBitmap;
     private Canvas uiCanvas;
     private long lastUiMinute = Long.MIN_VALUE, animationEpoch = Long.MIN_VALUE;
     private boolean lastLocked, lastPlugged, lastClock, initialized;
     private int lastStage, lastSeverity, lastBattery, lastBiometricDemo;
-    private boolean lastNative;
+    private boolean lastNative, lastPhone;
     private String lastDisplayName;
 
     public GpuTerminalRenderer(Context context) {
@@ -78,6 +78,7 @@ public final class GpuTerminalRenderer {
             hudScanOpacity = location(hudProgram, "uScanOpacity");
             hudScanSeconds = location(hudProgram, "uScanSeconds");
             hudWarningAge = location(hudProgram, "uWarningAge");
+            hudPhone = location(hudProgram, "uPhone");
             GLES30.glGetIntegerv(GLES30.GL_MAX_TEXTURE_SIZE,names,0);
             textureLimit=Math.min(MAX_UI_EDGE,names[0]);
             SculptureScene.Mesh mesh=SculptureScene.createMesh();
@@ -136,7 +137,7 @@ public final class GpuTerminalRenderer {
 
     public void render(long frameNanos, float tiltX, float tiltY, boolean locked,
                        int batteryPct, boolean plugged, boolean reduced, ArchiveTimeline.FrameState frame,
-                       String displayName) {
+                       String displayName, boolean phoneLayout) {
         if (!initialized || width <= 0 || height <= 0 || uiBitmap == null) return;
         if (animationEpoch == Long.MIN_VALUE || frameNanos < animationEpoch) animationEpoch = frameNanos;
         float time = reduced ? 0 : (float)((frameNanos-animationEpoch)*1e-9);
@@ -145,12 +146,12 @@ public final class GpuTerminalRenderer {
         if (lastUiMinute != minute || lastStage != frame.stage || lastSeverity != frame.intensity
                 || lastLocked != locked || lastBattery != batteryPct || lastPlugged != plugged
                 || lastClock != clock || lastNative != frame.nativeFailure || lastBiometricDemo != frame.biometricDemo
-                || !displayName.equals(lastDisplayName)) {
+                || !displayName.equals(lastDisplayName) || lastPhone != phoneLayout) {
             uiBitmap.eraseColor(0);
             uiCanvas.save();
             uiCanvas.scale(uiWidth/(float)width,uiHeight/(float)height);
             overlay.draw(uiCanvas,width,height,frame.stage,frame.intensity,frame.nativeFailure,
-                    device,batteryPct,plugged,locked,clock,frame.biometricDemo,displayName);
+                    device,batteryPct,plugged,locked,clock,frame.biometricDemo,displayName,phoneLayout);
             uiCanvas.restore();
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0);
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, uiTexture);
@@ -160,7 +161,7 @@ public final class GpuTerminalRenderer {
             lastLocked=locked; lastBattery=batteryPct; lastPlugged=plugged; lastClock=clock;
             lastNative=frame.nativeFailure;
             lastBiometricDemo=frame.biometricDemo;
-            lastDisplayName=displayName;
+            lastDisplayName=displayName; lastPhone=phoneLayout;
         }
 
         GLES30.glDisable(GLES30.GL_SCISSOR_TEST);
@@ -182,17 +183,17 @@ public final class GpuTerminalRenderer {
             GLES30.glUniform1f(stageBirth,frame.birth);
             GLES30.glUniform1f(stageGlitch,reduced || frame.seconds<.18f ? 0 : frame.burst);
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES,0,3);
-            if (frame.birth > 0) drawSculpture(time, reduced ? 0 : tiltX, reduced ? 0 : tiltY, frame, reduced);
+            if (frame.birth > 0) drawSculpture(time, reduced ? 0 : tiltX, reduced ? 0 : tiltY, frame, reduced, phoneLayout);
             if (postProcess) {
                 float strength = recovering ? frame.recoveryGlitch : (frame.intensity==2 ? 1 : .67f);
                 blackout.present(width,height,planeVao,frame.seconds,frame.burst,strength,recovering);
             }
-            if (frame.foundation > 0 || frame.card > 0 || frame.telemetry > 0 || frame.caption > 0) drawHud(frame,reduced);
+            if (frame.foundation > 0 || frame.card > 0 || frame.telemetry > 0 || frame.caption > 0) drawHud(frame,reduced,phoneLayout);
         }
-        if (frame.snapshot > .001f) drawSnapshot(time, frame);
+        if (frame.snapshot > .001f) drawSnapshot(time, frame, phoneLayout);
     }
 
-    private void drawSculpture(float time, float tx, float ty, ArchiveTimeline.FrameState frame, boolean reduced) {
+    private void drawSculpture(float time, float tx, float ty, ArchiveTimeline.FrameState frame, boolean reduced, boolean phoneLayout) {
         float recoil = reduced ? 0 : frame.burst;
         float shock = reduced || frame.intensity==0 ? 0
                 : Math.max(0,1-frame.seconds/.185f);
@@ -206,8 +207,8 @@ public final class GpuTerminalRenderer {
         Matrix.multiplyMM(viewModel,0,view,0,model,0);
         Matrix.multiplyMM(mvp,0,projection,0,viewModel,0);
         int side = Math.min(width,height);
-        int diameter = Math.round(side*(portrait ? .88f : 1.09f)*(1f+frame.peel*.13f));
-        float cx = width*(portrait ? .52f : .44f), cy = height*(portrait ? .46f : .495f);
+        int diameter = Math.round(side*(phoneLayout ? (portrait ? .73f : 1.05f) : (portrait ? .88f : 1.09f))*(1f+frame.peel*.13f));
+        float cx = width*(phoneLayout ? (portrait ? .65f : .47f) : (portrait ? .52f : .44f)), cy = height*(phoneLayout ? (portrait ? .44f : .48f) : (portrait ? .46f : .495f));
         // Preserve the square projection's apparent framing without clipping to that square.
         float xScale = diameter / (float)width, yScale = diameter / (float)height;
         float xOffset = 2*cx/width-1, yOffset = 1-2*cy/height;
@@ -232,7 +233,7 @@ public final class GpuTerminalRenderer {
         GLES30.glDisable(GLES30.GL_DEPTH_TEST);
     }
 
-    private void drawHud(ArchiveTimeline.FrameState frame, boolean reduced) {
+    private void drawHud(ArchiveTimeline.FrameState frame, boolean reduced, boolean phoneLayout) {
         GLES30.glUseProgram(hudProgram);
         GLES30.glBindVertexArray(planeVao);
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0);
@@ -240,6 +241,7 @@ public final class GpuTerminalRenderer {
         GLES30.glEnable(GLES30.GL_BLEND);
         GLES30.glBlendFunc(GLES30.GL_ONE,GLES30.GL_ONE_MINUS_SRC_ALPHA);
         GLES30.glUniform1i(hudTexture,0);
+        GLES30.glUniform1f(hudPhone,phoneLayout?1:0);
         GLES30.glUniform2f(hudSize,width,height);
         GLES30.glUniform4f(hudPhases,frame.foundation,frame.card,frame.telemetry,frame.caption);
         GLES30.glUniform1f(hudScan,frame.scan);
@@ -251,12 +253,12 @@ public final class GpuTerminalRenderer {
         GLES30.glDisable(GLES30.GL_BLEND);
     }
 
-    private void drawSnapshot(float time, ArchiveTimeline.FrameState frame) {
+    private void drawSnapshot(float time, ArchiveTimeline.FrameState frame, boolean phoneLayout) {
         // The synthetic snapshot contains only the theme's gallery.
         String style = prefs.getString("home_scene", CarbonHomeRenderer.STYLE);
         GLES30.glEnable(GLES30.GL_BLEND);
         GLES30.glBlendFunc(GLES30.GL_ONE,GLES30.GL_ONE_MINUS_SRC_ALPHA);
-        snapshot.drawSnapshot(width,height,time,frame,"dark_gallery".equals(style) || CarbonHomeRenderer.STYLE.equals(style));
+        snapshot.drawSnapshot(width,height,time,frame,"dark_gallery".equals(style) || CarbonHomeRenderer.STYLE.equals(style),phoneLayout);
         GLES30.glDisable(GLES30.GL_BLEND);
     }
 

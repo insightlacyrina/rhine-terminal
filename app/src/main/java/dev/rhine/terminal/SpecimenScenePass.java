@@ -12,7 +12,7 @@ import static android.opengl.GLES30.*;
 /** Shared gallery draw for both wallpapers and the lock's desktop transition. */
 final class SpecimenScenePass {
     private int program, vao, texture, sizeLocation, timeLocation, revealLocation, darkLocation;
-    private int flightLocation, desatLocation;
+    private int flightLocation, desatLocation, phoneLocation;
 
     void initialize(Context context) {
         initialize(context, false);
@@ -26,6 +26,7 @@ final class SpecimenScenePass {
         timeLocation = glGetUniformLocation(program, "uTime");
         revealLocation = glGetUniformLocation(program, "uReveal");
         darkLocation = glGetUniformLocation(program, "uDark");
+        phoneLocation = glGetUniformLocation(program, "uPhone");
         if (snapshot) {
             flightLocation = glGetUniformLocation(program, "uFlight");
             desatLocation = glGetUniformLocation(program, "uDesat");
@@ -57,19 +58,19 @@ final class SpecimenScenePass {
         }
     }
 
-    void draw(int x, int y, int width, int height, float time, float reveal, boolean dark) {
-        bind(x, y, width, height, time, reveal, dark);
+    void draw(int x, int y, int width, int height, float time, float reveal, boolean dark, boolean phoneLayout) {
+        bind(x, y, width, height, time, reveal, dark, phoneLayout);
         finish();
     }
 
-    void drawSnapshot(int width, int height, float time, ArchiveTimeline.FrameState frame, boolean dark) {
-        bind(0, 0, width, height, time, 1, dark);
+    void drawSnapshot(int width, int height, float time, ArchiveTimeline.FrameState frame, boolean dark, boolean phoneLayout) {
+        bind(0, 0, width, height, time, 1, dark, phoneLayout);
         glUniform4f(flightLocation, frame.snapshotTravel, frame.snapshot, frame.snapshotScan, frame.snapshotCorners);
         glUniform1f(desatLocation, frame.snapshotDesat);
         finish();
     }
 
-    private void bind(int x, int y, int width, int height, float time, float reveal, boolean dark) {
+    private void bind(int x, int y, int width, int height, float time, float reveal, boolean dark, boolean phoneLayout) {
         glViewport(x, y, width, height);
         glUseProgram(program);
         glBindVertexArray(vao);
@@ -79,6 +80,7 @@ final class SpecimenScenePass {
         glUniform1f(timeLocation, time);
         glUniform1f(revealLocation, reveal);
         glUniform1f(darkLocation, dark ? 1f : 0f);
+        glUniform1f(phoneLocation, phoneLayout ? 1f : 0f);
     }
 
     private void finish() {

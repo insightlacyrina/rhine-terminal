@@ -23,10 +23,11 @@ public final class TerminalInstrumentation extends Instrumentation {
             testArchiveTimeline();
             testInstancedFinMesh();
             testRenderPortraitAndLandscape();
+            testPhoneFallbackLayout();
             testSettingsAndComponentRegistration();
             if(!skipPreview) testPreviewActivityLifecycle();
             logDeviceDiagnostics();
-            result.putString("stream", "\nOK: archive timeline, 400-fin unit mesh, Canvas portrait/landscape, settings/components, " + (skipPreview?"preview skipped (locked-device capture run)":"preview lifecycle") + "\n");
+            result.putString("stream", "\nOK: archive timeline, 400-fin unit mesh, phone and tablet Canvas layouts, settings/components, " + (skipPreview?"preview skipped (locked-device capture run)":"preview lifecycle") + "\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", "\nFAIL: " + android.util.Log.getStackTraceString(error));
@@ -140,6 +141,29 @@ public final class TerminalInstrumentation extends Instrumentation {
             check(bitmap.compress(Bitmap.CompressFormat.PNG,100,stream),"Write "+name);
         }
     }
+
+    private static void testPhoneFallbackLayout() {
+        ArchiveFallback fallback = new ArchiveFallback();
+        ArchiveTimeline.FrameState frame = new ArchiveTimeline.FrameState();
+        frame.reset();
+        for (boolean portrait : new boolean[]{true, false}) {
+            int width = portrait ? 900 : 1980, height = portrait ? 1980 : 900;
+            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            try {
+                Canvas canvas = new Canvas(bitmap);
+                fallback.draw(canvas, frame, 73, true, true, true, LockDisplayName.DEFAULT, true);
+                int cardX = Math.round(width * (portrait ? .102f : .081f));
+                int cardY = Math.round(height * (portrait ? .406f : .390f));
+                check((bitmap.getPixel(cardX, cardY) & 0xff) < 35, "Phone NIRI card at compact position");
+                int railX = (int) (width * (portrait ? .27f : .13f));
+                check((bitmap.getPixel(railX, 2) & 0xff) < 185
+                        && (bitmap.getPixel(railX, height - 3) & 0xff) < 185, "Phone rail reaches both edges");
+            } finally {
+                bitmap.recycle();
+            }
+        }
+    }
+
     private void testSettingsAndComponentRegistration() throws Exception {
         Context context = getTargetContext();
         check("android.permission.BIND_WALLPAPER".equals(context.getPackageManager().getServiceInfo(new ComponentName(context, RhineWallpaperService.class), PackageManager.GET_META_DATA).permission), "Wallpaper bind permission");

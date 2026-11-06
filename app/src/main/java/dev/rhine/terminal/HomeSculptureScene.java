@@ -69,6 +69,7 @@ public final class HomeSculptureScene {
         layout(location=0) in vec4 aSurface;
         layout(location=1) in vec2 aProfileNormal;
         uniform vec2 uSize;
+        uniform vec4 uEdgeInsets;
         uniform float uTime;
         uniform float uReveal;
         uniform vec2 uTilt;
@@ -181,7 +182,8 @@ public final class HomeSculptureScene {
             vRibbon=vec2(s,q);
             vDepth=z;
             vWarmth=.5+.5*sin(c+.7);
-            gl_Position=vec4(xy.x/size.x*2.0-1.0,1.0-xy.y/size.y*2.0,-z/260.0,1.0);
+            vec2 uv=uEdgeInsets.xy+xy/size*(1.0-uEdgeInsets.xy-uEdgeInsets.zw);
+            gl_Position=vec4(uv.x*2.0-1.0,1.0-uv.y*2.0,-z/260.0,1.0);
         }
         """;
 
@@ -189,6 +191,7 @@ public final class HomeSculptureScene {
         #version 300 es
         precision highp float;
         uniform vec2 uSize;
+        uniform vec4 uEdgeInsets;
         in vec3 vNormal;
         in vec2 vRibbon;
         in float vDepth;
@@ -196,9 +199,11 @@ public final class HomeSculptureScene {
         out vec4 fragColor;
 
         void main() {
-            vec2 edge=min(gl_FragCoord.xy,uSize-gl_FragCoord.xy);
+            vec2 uv=vec2(gl_FragCoord.x,uSize.y-gl_FragCoord.y)/uSize;
+            vec2 p=(uv-uEdgeInsets.xy)/(1.0-uEdgeInsets.xy-uEdgeInsets.zw)*uSize;
+            vec2 edge=min(p,uSize-p);
             // Safety bound for alternate aspect ratios and future motion changes.
-            if(min(edge.x,edge.y)>.1875*min(uSize.x,uSize.y)) discard;
+            if(min(edge.x,edge.y)<0.0 || min(edge.x,edge.y)>.1875*min(uSize.x,uSize.y)) discard;
             vec3 n=normalize(vNormal);
             const vec3 key=vec3(-.350,-.480,.804);
             const vec3 fill=vec3(.771,.548,.325);

@@ -21,6 +21,7 @@ public final class HomeBackgroundScene {
         uniform float uReveal;
         uniform sampler2D uTelemetry;
         uniform float uTelemetryOn;
+        uniform vec4 uEdgeInsets;
         out vec4 fragColor;
 
         float stroke(float distancePx, float halfWidth) {
@@ -28,8 +29,9 @@ public final class HomeBackgroundScene {
         }
 
         void main() {
-            vec2 p = vec2(gl_FragCoord.x, uSize.y - gl_FragCoord.y);
-            vec2 uv = p / uSize;
+            vec2 screen = vec2(gl_FragCoord.x, uSize.y - gl_FragCoord.y) / uSize;
+            vec2 uv = (screen-uEdgeInsets.xy)/(1.0-uEdgeInsets.xy-uEdgeInsets.zw);
+            vec2 p = uv*uSize;
             float unit = min(uSize.x, uSize.y) / 1600.0;
             vec2 local = min(p, uSize - p);
             float edge = min(local.x, local.y) / unit;
@@ -74,6 +76,10 @@ public final class HomeBackgroundScene {
                 }
             }
 
+            if (uEdgeInsets.y > 0.0) {
+                float margin = smoothstep(0.0,.02,min(min(uv.x,uv.y),min(1.0-uv.x,1.0-uv.y)));
+                ink=mix(vec3(.040,.050,.043),ink,margin);
+            }
             fragColor = vec4(ink, 1.0);
         }
         """;

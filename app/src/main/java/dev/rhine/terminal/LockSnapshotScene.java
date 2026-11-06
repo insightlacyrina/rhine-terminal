@@ -19,7 +19,9 @@ public final class LockSnapshotScene {
                 float e=clamp(uFlight.x,0.0,1.0), opacity=uFlight.y, scan=uFlight.z, corners=uFlight.w;
                 bool portrait=uSize.y>uSize.x;
                 vec2 target=portrait?vec2(.325,.425):vec2(.2535,.430);
-                float scale=exp(log(portrait?.13:.197)*e);
+                if (uPhone>.5) target=portrait?vec2(.24,.4375):vec2(.1675,.50);
+                float targetScale=uPhone>.5?(portrait?.105:.215):(portrait?.13:.197);
+                float scale=exp(log(targetScale)*e);
                 vec2 control=vec2(mix(.5,target.x,.45),min(.5,target.y)-.16);
                 float back=1.0-e;
                 vec2 center=(back*back*.5+2.0*back*e*control+e*e*target)*uSize;

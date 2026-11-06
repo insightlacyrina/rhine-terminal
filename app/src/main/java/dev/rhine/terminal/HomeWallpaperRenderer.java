@@ -26,9 +26,9 @@ final class HomeWallpaperRenderer {
     private Bitmap textBitmap;
     private Canvas textCanvas;
     private int background, sculpture, backgroundVao, sculptureVao, vertices, indices, telemetry;
-    private int backgroundSize, backgroundTime, backgroundReveal, telemetrySampler, telemetryOn;
+    private int backgroundSize, backgroundTime, backgroundReveal, telemetrySampler, telemetryOn, backgroundInsets;
     private final SpecimenScenePass gallery = new SpecimenScenePass();
-    private int sculptureSize, sculptureTime, sculptureReveal, sculptureTilt, indexCount;
+    private int sculptureSize, sculptureTime, sculptureReveal, sculptureTilt, sculptureInsets, indexCount;
     private long firstFrame, lastTelemetry;
     private int lastBattery = Integer.MIN_VALUE, lastThermal = Integer.MIN_VALUE;
     private boolean lastPlugged, lastSaver;
@@ -55,11 +55,13 @@ final class HomeWallpaperRenderer {
             background = GpuTerminalRenderer.linkProgram(HomeBackgroundScene.VERTEX_SHADER, HomeBackgroundScene.FRAGMENT_SHADER);
             sculpture = GpuTerminalRenderer.linkProgram(HomeSculptureScene.VERTEX_SHADER, HomeSculptureScene.FRAGMENT_SHADER);
             backgroundSize = glGetUniformLocation(background, "uSize");
+            backgroundInsets = glGetUniformLocation(background, "uEdgeInsets");
             backgroundTime = glGetUniformLocation(background, "uTime");
             backgroundReveal = glGetUniformLocation(background, "uReveal");
             telemetrySampler = glGetUniformLocation(background, "uTelemetry");
             telemetryOn = glGetUniformLocation(background, "uTelemetryOn");
             sculptureSize = glGetUniformLocation(sculpture, "uSize");
+            sculptureInsets = glGetUniformLocation(sculpture, "uEdgeInsets");
             sculptureTime = glGetUniformLocation(sculpture, "uTime");
             sculptureReveal = glGetUniformLocation(sculpture, "uReveal");
             sculptureTilt = glGetUniformLocation(sculpture, "uTilt");
@@ -105,7 +107,7 @@ final class HomeWallpaperRenderer {
     }
 
     void render(long frame, int width, int height, long unfoldStart, boolean fromVisible, boolean reduced,
-                boolean showTelemetry, boolean lightHome, boolean darkGallery, boolean carbonConsole, int battery, boolean plugged) {
+                boolean showTelemetry, boolean lightHome, boolean darkGallery, boolean carbonConsole, int battery, boolean plugged, boolean phoneLayout) {
         if (firstFrame == 0) firstFrame = frame;
         double elapsed = reduced ? 0 : Math.max(0, frame - firstFrame) * 1e-9;
         float reveal = 1f;
@@ -119,7 +121,7 @@ final class HomeWallpaperRenderer {
                 release(true);
                 initialize(true);
             }
-            carbon.render(frame,width,height,reduced,reveal);
+            carbon.render(frame,width,height,reduced,reveal,phoneLayout);
             return;
         }
         if (carbon != null) {
@@ -134,16 +136,21 @@ final class HomeWallpaperRenderer {
         glDisable(GL_DEPTH_TEST);
         glDepthMask(true);
         if (lightHome || darkGallery) {
-            gallery.draw(0,0,width,height,(float)elapsed,reveal,darkGallery);
+            gallery.draw(0,0,width,height,(float)elapsed,reveal,darkGallery,phoneLayout);
             return;
         }
         glClear(GL_DEPTH_BUFFER_BIT);
+        boolean portrait = height > width;
+        float sideInset = phoneLayout ? (portrait ? .02f : .04f) : 0;
+        float topInset = phoneLayout ? (portrait ? .083f : .075f) : 0;
+        float bottomInset = phoneLayout ? (portrait ? .115f : .09f) : 0;
         glUseProgram(background);
         glBindVertexArray(backgroundVao);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, telemetry);
         if (showTelemetry) updateTelemetry(frame, battery, plugged);
         glUniform2f(backgroundSize, width, height);
+        glUniform4f(backgroundInsets, sideInset, topInset, sideInset, bottomInset);
         glUniform1f(backgroundTime, (float) (elapsed % 120.0));
         glUniform1f(backgroundReveal, reveal);
         glUniform1i(telemetrySampler, 0);
@@ -155,6 +162,7 @@ final class HomeWallpaperRenderer {
         glUseProgram(sculpture);
         glBindVertexArray(sculptureVao);
         glUniform2f(sculptureSize, width, height);
+        glUniform4f(sculptureInsets, sideInset, topInset, sideInset, bottomInset);
         glUniform1f(sculptureTime, (float) (elapsed % SCULPTURE_PERIOD));
         glUniform1f(sculptureReveal, reveal);
         glUniform2f(sculptureTilt, 0f, 0f);
@@ -199,13 +207,16 @@ final class HomeWallpaperRenderer {
         }
     }
 
-    static void drawFallback(Canvas canvas, Paint paint) {
+    static void drawFallback(Canvas canvas, Paint paint, boolean phoneLayout) {
         canvas.drawColor(BASE_COLOR);
         float edge = Math.min(canvas.getWidth(), canvas.getHeight()) * .065f;
+        float side = phoneLayout ? canvas.getWidth() * .03f : 0;
+        float top = phoneLayout ? canvas.getHeight() * .08f : 0;
+        float bottom = phoneLayout ? canvas.getHeight() * .11f : 0;
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(Math.max(3f, edge * .12f));
         paint.setColor(0xff252b1b);
-        canvas.drawRoundRect(edge, edge, canvas.getWidth() - edge, canvas.getHeight() - edge,
+        canvas.drawRoundRect(edge + side, edge + top, canvas.getWidth() - edge - side, canvas.getHeight() - edge - bottom,
                 edge, edge, paint);
     }
 
