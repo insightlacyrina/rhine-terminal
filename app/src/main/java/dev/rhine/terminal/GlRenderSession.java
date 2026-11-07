@@ -120,7 +120,16 @@ final class GlRenderSession {
             schedule();
         });
     }
-    void pulse() { if (!closed) handler.post(() -> pulseEpoch = System.nanoTime()); }
+    void pulse() {
+        if (closed || home) return;
+        handler.post(() -> {
+            pulseEpoch = System.nanoTime();
+            lastFrame = 0;
+            handler.removeCallbacks(wake);
+            waiting = false;
+            schedule();
+        });
+    }
     void playArchiveDemo() {
         if (closed || home) return;
         handler.post(() -> {

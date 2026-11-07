@@ -25,6 +25,7 @@ import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.WindowManager;
 import android.util.Log;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongConsumer;
 
 /** Draws only while the wallpaper host is visible and the display is interactive. */
@@ -38,12 +39,14 @@ public final class RhineWallpaperService extends WallpaperService {
         private final SensorManager sensors = (SensorManager) getSystemService(SENSOR_SERVICE);
         private final KeyguardManager keyguard = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
         private final SoftTapDetector tapDetector = new SoftTapDetector();
+        private final BooleanSupplier tapArmed = this::tapAllowed;
         private final Sensor accelerometer = sensors == null ? null : sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         private final Sensor rotation = sensors == null ? null : sensors.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
         private boolean visible, surfaceReady, sensorActive, tapSensorActive, registered, screenOn = true;
         private int battery = -1;
+        private long lastTapStatusNanos;
         private float tiltX, tiltY, touchX, touchY;
-        private String lastLifecycle = "";
+        private String lastLifecycle = "", lastTapState = "";
         private final float[] matrix = new float[9], remapped = new float[9], angles = new float[3];
         private final LongConsumer nativeFailure = this::onNativeFailure;
         private final BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -93,29 +96,39 @@ public final class RhineWallpaperService extends WallpaperService {
             } else if (!useSensor && sensorActive) {
                 sensors.unregisterListener(this, rotation); sensorActive = false; tiltX = tiltY = 0;
             }
-            boolean useTap = tapAllowed() && accelerometer != null;
+            boolean useTap = running() && !isPreview() && !reduced && accelerometer != null;
             if (useTap && !tapSensorActive) {
                 tapDetector.reset();
-                tapSensorActive = sensors.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
+                tapSensorActive = sensors.registerListener(this, accelerometer, 10_000);
             } else if (!useTap && tapSensorActive) {
                 sensors.unregisterListener(this, accelerometer); tapSensorActive = false;
                 tapDetector.reset();
             }
+            logTapState();
             session.setInput(tiltX + touchX, tiltY + touchY, battery);
             session.setActive(running());
             session.refresh();
         }
         private boolean tapAllowed() {
+            // Lock flags can be unset or delayed when an OEM reuses the system wallpaper engine.
+            // The running engine and live keyguard check gate every detected impulse instead.
             return running() && !isPreview() && !prefs.getBoolean("reduced_motion", false)
-                    && keyguard != null && keyguard.isKeyguardLocked()
-                    && (Build.VERSION.SDK_INT < 34 || (getWallpaperFlags() & WallpaperManager.FLAG_LOCK) != 0);
+                    && keyguard != null && keyguard.isKeyguardLocked();
         }
-        private void directPulse() {
-            if (running() && !prefs.getBoolean("reduced_motion", false)
-                    && tapDetector.acceptDirect(SystemClock.elapsedRealtimeNanos())) session.pulse();
+        private void logTapState() {
+            int flags = Build.VERSION.SDK_INT >= 34 ? getWallpaperFlags() : -1;
+            String state="registered="+tapSensorActive+" armed="+(tapSensorActive && tapAllowed())
+                    +" running="+running()+" preview="+isPreview()+" flags="+flags;
+            if (!state.equals(lastTapState)) { Log.i("RhineTap", "source=sensor "+state); lastTapState=state; }
+        }
+        private void directPulse(String source) {
+            boolean allowed=running() && !prefs.getBoolean("reduced_motion", false);
+            boolean accepted=allowed && tapDetector.acceptDirect(SystemClock.elapsedRealtimeNanos());
+            Log.i("RhineTap", "source="+source+" armed="+allowed+" accepted="+accepted);
+            if (accepted) session.pulse();
         }
         @Override public Bundle onCommand(String action, int x, int y, int z, Bundle extras, boolean resultRequested) {
-            if (WallpaperManager.COMMAND_TAP.equals(action)) directPulse();
+            if (WallpaperManager.COMMAND_TAP.equals(action)) directPulse("command");
             return super.onCommand(action, x, y, z, extras, resultRequested);
         }
         @Override public WallpaperColors onComputeColors() {
@@ -130,7 +143,7 @@ public final class RhineWallpaperService extends WallpaperService {
             return null;
         }
         @Override public void onTouchEvent(MotionEvent event) {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) directPulse();
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) directPulse("touch");
             if (!prefs.getBoolean("reduced_motion", false) && (event.getActionMasked() == MotionEvent.ACTION_DOWN || event.getActionMasked() == MotionEvent.ACTION_MOVE)) {
                 android.graphics.Rect bounds = getSurfaceHolder().getSurfaceFrame();
                 if (bounds.width() > 0 && bounds.height() > 0) {
@@ -144,9 +157,16 @@ public final class RhineWallpaperService extends WallpaperService {
         }
         @Override public void onSensorChanged(SensorEvent event) {
             if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-                if (tapSensorActive && event.values.length >= 3
-                        && tapDetector.sample(event.timestamp, event.values[0], event.values[1], event.values[2])
-                        && tapAllowed()) session.pulse();
+                if (tapSensorActive && event.values.length >= 3) {
+                    if (event.timestamp - lastTapStatusNanos >= 500_000_000L) {
+                        lastTapStatusNanos = event.timestamp;
+                        logTapState();
+                    }
+                    if (tapDetector.sample(event.timestamp, event.values[0], event.values[1], event.values[2], tapArmed)) {
+                        Log.i("RhineTap", "source=sensor armed=true accepted=true");
+                        session.pulse();
+                    }
+                }
                 return;
             }
             if (event.sensor.getType() != Sensor.TYPE_ROTATION_VECTOR) return;
