@@ -47,6 +47,10 @@ final class GlRenderSession {
     private boolean phoneLayout;
     private String lockDisplayName = LockDisplayName.DEFAULT;
     private final ArchiveTimeline.FrameState lockFrame = new ArchiveTimeline.FrameState();
+    private final LockIdleTimeline lockIdle = new LockIdleTimeline();
+    private final HomeDeviceTelemetry lockTelemetry;
+    private ArchivePreviewAudio audio;
+    private boolean soundIdle, soundDenied;
     private long wakeEpoch, pulseEpoch, demoEpoch, pendingAlert;
     private int denyLevel, biometricDemo;
     private long biometricDemoEpoch;
@@ -78,6 +82,7 @@ final class GlRenderSession {
         prefs = this.context.getSharedPreferences("terminal", Context.MODE_PRIVATE);
         keyguard = (KeyguardManager) this.context.getSystemService(Context.KEYGUARD_SERVICE);
         power = (PowerManager) this.context.getSystemService(Context.POWER_SERVICE);
+        lockTelemetry = home ? null : new HomeDeviceTelemetry(this.context);
         thread.start(); handler = new Handler(thread.getLooper());
         handler.post(() -> choreographer = Choreographer.getInstance());
     }
@@ -94,9 +99,14 @@ final class GlRenderSession {
         if(closed) return;
         requestedActive=value;
         handler.post(() -> {
-            if (value && !active && !home) wakePending = true;
+            if (value && !active && !home) {
+                wakePending = true;
+                lockIdle.reset(System.nanoTime());
+            }
             active=value;
             readPreferences();
+            if (lockTelemetry != null) lockTelemetry.setActive(value);
+            if (audio != null) audio.setActive(value);
             if(value) schedule(); else cancel();
         });
     }
@@ -124,6 +134,7 @@ final class GlRenderSession {
         if (closed || home) return;
         handler.post(() -> {
             pulseEpoch = System.nanoTime();
+            lockIdle.interact(pulseEpoch);
             lastFrame = 0;
             handler.removeCallbacks(wake);
             waiting = false;
@@ -141,6 +152,9 @@ final class GlRenderSession {
             schedule();
         });
     }
+    void interact() {
+        if (!closed && !home) handler.post(() -> lockIdle.interact(System.nanoTime()));
+    }
     void playBiometricDemo(int source) {
         if (closed || !lockPreview || home) return;
         handler.post(() -> {
@@ -148,6 +162,8 @@ final class GlRenderSession {
             demoPending=false;
             biometricDemo=source;
             biometricDemoEpoch=System.nanoTime();
+            if (audio != null) audio.stop();
+            soundDenied=false;
             lastFrame=0;
             handler.removeCallbacks(wake);
             waiting=false;
@@ -160,6 +176,10 @@ final class GlRenderSession {
             if (pendingAlert != 0 && when < pendingAlert) return;
             denyLevel = pendingAlert != 0 && when - pendingAlert < 15_000_000_000L ? 2 : 1;
             pendingAlert=when; pendingNative=true;
+            demoEpoch=biometricDemoEpoch=0;
+            demoPending=false;
+            if (audio != null) audio.stop();
+            soundDenied=false;
             lastFrame=0; handler.removeCallbacks(wake); waiting=false; schedule();
         });
     }
@@ -182,7 +202,17 @@ final class GlRenderSession {
             return completed;
         } catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
     }
-    void close() { if(closed)return; closed=true; requestedActive=false; destroySurface(); handler.post(() -> { active=false; thread.quitSafely(); }); }
+    void close() {
+        if(closed)return;
+        closed=true; requestedActive=false;
+        destroySurface();
+        if (lockTelemetry != null) lockTelemetry.close();
+        handler.post(() -> {
+            if (audio != null) { audio.release(); audio=null; }
+            active=false;
+            thread.quitSafely();
+        });
+    }
     private void readPreferences() {
         requestedRate = readTargetFps();
         phoneLayout = "phone".equals(prefs.getString("wallpaper_layout", "tablet"));
@@ -194,6 +224,13 @@ final class GlRenderSession {
             lightHome = !carbonConsole && !darkGallery && !"dark".equals(scene);
         } else {
             lockDisplayName = LockDisplayName.read(prefs);
+            boolean sound = prefs.getBoolean("preview_sound", false);
+            if (sound && audio == null) {
+                audio = new ArchivePreviewAudio(context);
+                audio.setActive(active);
+            } else if (!sound && audio != null) {
+                audio.release(); audio = null;
+            }
         }
     }
     private int readTargetFps() {
@@ -231,6 +268,10 @@ final class GlRenderSession {
         demoEpoch = 0;
         demoPending = false;
         biometricDemoEpoch = 0;
+        lockIdle.reset(System.nanoTime());
+        soundIdle=soundDenied=false;
+        if (lockTelemetry != null) lockTelemetry.setActive(false);
+        if (audio != null) audio.setActive(false);
     }
     private int frameRate() {
         if (!fallback) return requestedRate;
@@ -243,8 +284,16 @@ final class GlRenderSession {
         if (lastFrame != 0 && nanos - lastFrame < (long)(1_000_000_000.0 / fps * .94)) { schedule(); return; }
         lastFrame = nanos;
         long begin = android.os.Debug.threadCpuTimeNanos();
-        if (!home && nanos - lastKeyguard >= 1_000_000_000L) { locked = keyguard != null && keyguard.isKeyguardLocked(); lastKeyguard = nanos; }
-        if (!home) readLockFrame(nanos);
+        if (!home && nanos - lastKeyguard >= 250_000_000L) {
+            boolean current = keyguard != null && keyguard.isKeyguardLocked();
+            if (current != locked) lockIdle.reset(nanos);
+            locked = current;
+            lastKeyguard = nanos;
+        }
+        if (!home) {
+            readLockFrame(nanos);
+            syncAudio();
+        }
         boolean showLocked = lockPreview || locked;
         boolean presented = false;
         try {
@@ -255,7 +304,8 @@ final class GlRenderSession {
                     if (home) {
                         ArchiveFallback.drawHome(canvas, homeFallbackPaint, lightHome, darkGallery || carbonConsole, phoneLayout);
                     } else {
-                        cpu.draw(canvas,lockFrame,battery,plugged,showLocked,prefs.getBoolean("archive_clock",true),lockDisplayName,phoneLayout);
+                        cpu.draw(canvas,lockFrame,battery,plugged,showLocked,prefs.getBoolean("archive_clock",true),lockDisplayName,phoneLayout,
+                                lockTelemetry.latest(), nanos/1_000_000L);
                     }
                     presented=true;
                 } }
@@ -269,6 +319,7 @@ final class GlRenderSession {
                     homeGpu.render(nanos, width, height, homeUnfoldStart, homeUnfoldFromVisible, requestedRate == 1,
                             showHomeTelemetry, lightHome, darkGallery, carbonConsole, battery, plugged, phoneLayout);
                 } else {
+                    gpu.setTelemetry(lockTelemetry.latest());
                     gpu.render(nanos, inputX, inputY, showLocked, battery, plugged, requestedRate == 1, lockFrame, lockDisplayName, phoneLayout);
                 }
                 EGLExt.eglPresentationTimeANDROID(display, eglSurface, nanos);
@@ -294,18 +345,26 @@ final class GlRenderSession {
     }
     private void readLockFrame(long nanos) {
         lockFrame.reset();
-        if (wakePending) { wakeEpoch = nanos; wakePending = false; }
-        if (demoPending) { demoEpoch = nanos; demoPending = false; }
+        if (wakePending) {
+            wakeEpoch = nanos; wakePending = false;
+            if (audio != null) audio.playEntry();
+        }
+        if (demoPending) {
+            demoEpoch = nanos; demoPending = false;
+            if (audio != null) audio.play();
+        }
         long eventAge = (nanos - pendingAlert) / 1_000_000L;
         long hold = denyLevel == 2 ? ArchiveTimeline.SECOND_HOLD_MS : ArchiveTimeline.FIRST_HOLD_MS;
         if (pendingAlert != 0 && eventAge >= 0 && eventAge < hold) {
             lockFrame.deny(denyLevel,pendingNative,eventAge*.001f);
+            lockIdle.reset(nanos);
             return;
         }
         long visualAge=(nanos-biometricDemoEpoch)/1_000_000L;
         if (biometricDemoEpoch!=0 && visualAge>=0 && visualAge<ArchiveTimeline.FIRST_HOLD_MS) {
             lockFrame.deny(2,false,visualAge*.001f);
             lockFrame.biometricDemo=biometricDemo;
+            lockIdle.reset(nanos);
             return;
         }
         if (requestedRate != 1) {
@@ -315,21 +374,38 @@ final class GlRenderSession {
             }
             if (recoveryAge < 600) {
                 ArchiveTimeline.recover(lockFrame, recoveryAge);
+                lockIdle.reset(nanos);
                 return;
             }
         }
         if (demoEpoch != 0 && nanos >= demoEpoch) {
             long age = (nanos - demoEpoch) / 1_000_000L;
             ArchiveTimeline.demo(lockFrame, age);
+            lockIdle.reset(nanos);
             if (age < ArchiveTimeline.DEMO_MS) return;
             demoEpoch = 0;
         }
-        if (requestedRate == 1) return;
+        boolean idleEnabled = (lockPreview || locked) && prefs.getBoolean("idle_black", true);
+        lockIdle.apply(lockFrame,nanos,idleEnabled,requestedRate==1);
+        if (requestedRate == 1 || lockFrame.idleBlack) return;
         long age = (nanos - wakeEpoch) / 1_000_000L;
         if (wakeEpoch != 0 && age >= 0 && age < ArchiveTimeline.WAKE_MS) {
             ArchiveTimeline.wake(lockFrame, age, false);
         }
         if (pulseEpoch != 0) lockFrame.pulse = ArchiveTimeline.pulse((nanos - pulseEpoch) / 1_000_000L);
+    }
+
+    private void syncAudio() {
+        boolean darkIdle = lockFrame.idleBlack && lockFrame.denyMix > .99f;
+        boolean denied = lockFrame.stage == ArchiveTimeline.DENIED;
+        if (audio != null && demoEpoch == 0) {
+            if (darkIdle && !soundIdle) audio.playStandby();
+            if (!darkIdle && soundIdle) audio.playWake();
+            if (denied && !soundDenied) audio.playDenial();
+            if (!denied && soundDenied) audio.playRecover();
+        }
+        soundIdle=darkIdle;
+        soundDenied=denied;
     }
 
     private void useFallback() {
@@ -391,6 +467,7 @@ final class GlRenderSession {
         if (nanos - statsStart < 5_000_000_000L) return;
         System.arraycopy(durations, 0, sorted, 0, samples); Arrays.sort(sorted, 0, samples);
         double actual = Math.max(0,frames-1) * 1e9 / (nanos - statsStart);
+        if (lockTelemetry != null) lockTelemetry.setSubmittedFps((float)actual);
         double p50 = samples == 0 ? 0 : sorted[(samples-1)/2] / 1e6;
         double p95 = samples == 0 ? 0 : sorted[(int)((samples-1)*.95)] / 1e6;
         stats = String.format(Locale.US,"提交 %.1f fps · CPU p50 %.1f / p95 %.1f ms%s",actual,p50,p95,fallback?" · 兼容模式":"");

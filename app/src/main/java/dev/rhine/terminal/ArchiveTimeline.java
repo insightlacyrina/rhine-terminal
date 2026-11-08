@@ -21,6 +21,8 @@ public final class ArchiveTimeline {
         public float birth, pulse, scan, scanHead, scanOpacity, peel, snapshot, seconds, burst;
         public float foundation, card, telemetry, caption;
         public float snapshotTravel, snapshotScan, snapshotCorners, snapshotDesat, denyMix, recoveryGlitch;
+        public float disorder;
+        public boolean idleBlack;
         boolean nativeFailure;
         int biometricDemo;
 
@@ -31,6 +33,8 @@ public final class ArchiveTimeline {
             pulse = scan = scanHead = scanOpacity = peel = snapshot = seconds = burst = 0;
             snapshotTravel = snapshotCorners = snapshotDesat = denyMix = recoveryGlitch = 0;
             snapshotScan = -1;
+            disorder = 0;
+            idleBlack = false;
             nativeFailure = false;
             biometricDemo = 0;
         }
@@ -44,10 +48,11 @@ public final class ArchiveTimeline {
             nativeFailure = system;
             birth = foundation = card = telemetry = caption = 1;
             pulse = scan = scanHead = scanOpacity = peel = snapshot = 0;
-            float impact = .14f + .74f * (float)Math.exp(-time * 6.8f);
-            impact += .23f * (float)Math.exp(-square((time - .36f) / .115f));
-            if (severity == 2) impact += .46f * (float)Math.exp(-square((time - .91f) / .19f));
-            burst = Math.min(1,impact) * (severity == 2 ? 1 : .48f);
+            // Upstream holds a single 300 ms tear, then follows zero at 14/s.
+            // Disorder is a separate slow 3.2/s shape response, never camera recoil.
+            burst = time < .3f ? 1 : (float)Math.exp(-14 * (time - .3f));
+            disorder = .12f * (1 - (float)Math.exp(-3.2f * Math.max(0, time)));
+            pulse = .5f * ArchiveTimeline.pulse((long)(time * 1000));
         }
     }
 
@@ -74,6 +79,7 @@ public final class ArchiveTimeline {
         frame.seconds = age;
         frame.denyMix = (float)Math.exp(-28 * age);
         frame.recoveryGlitch = ageMs < 260 ? .45f : .45f * (float)Math.exp(-14 * (age - .260f));
+        frame.disorder = .12f * (float)Math.exp(-3.2f * age);
     }
 
     public static void demo(FrameState frame, long ms) {
@@ -141,7 +147,6 @@ public final class ArchiveTimeline {
     private static float inOutCubic(float t) {
         return t < .5f ? 4*t*t*t : 1 - (float)Math.pow(-2*t+2,3)/2;
     }
-    private static float square(float x) { return x * x; }
     private static float smooth(float t) { return t*t*(3-2*t); }
     private static float quintic(float t) { return t*t*t*(t*(6*t-15)+10); }
     private static float outCubic(float t) { return 1-(1-t)*(1-t)*(1-t); }

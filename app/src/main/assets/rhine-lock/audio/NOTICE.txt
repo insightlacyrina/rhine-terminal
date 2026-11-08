@@ -1,0 +1,26 @@
+Rhine Lock interface sounds
+https://github.com/tmc5csxr9m-cpu/rhine-lock
+Upstream revision a4df68c6bd9e01ecb7660659becf495957e57faa
+
+The 28 rhine_*.wav files in res/raw are byte-for-byte copies of the
+corresponding frontend/public/audio/*.wav files. The rhine_ filename prefix
+only avoids Android resource name collisions. No re-encoding was performed.
+
+draw.wav, access.wav, assemble.wav, process.wav, warning.wav and reveal.wav
+are synthesised by upstream tools/assets/gen_sfx.py, distributed with the
+project under GNU AGPL-3.0-or-later. See the accompanying AGPL-3.0.txt.
+
+key1.wav, key2.wav, key3.wav, erase.wav, request.wav, nav.wav, open.wav,
+close.wav, choose.wav, switch.wav, toggle.wav, arm.wav, execute.wav,
+error.wav, glitch1.wav, glitch2.wav, glitch3.wav, recover.wav, standby.wav,
+wake.wav, blip1.wav and blip2.wav originate from Kenney Interface Sounds,
+dedicated to the public domain under CC0 1.0 Universal.
+https://kenney.nl/assets/interface-sounds
+https://creativecommons.org/publicdomain/zero/1.0/
+
+ArchivePreviewAudio.java ports the upstream cue table, random variants,
+key/navigation pitch spread and perceptual 42 dB gain curve. The complete
+visual demo follows upstream entry, verification, denial, recovery and exit
+cues, retimed to the Android visual sequence.
+
+Upstream's optional commercial score bgm-loop.opus is not included.

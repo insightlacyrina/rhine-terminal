@@ -126,6 +126,7 @@ public final class RhineWallpaperService extends WallpaperService {
             boolean accepted=allowed && tapDetector.acceptDirect(SystemClock.elapsedRealtimeNanos());
             Log.i("RhineTap", "source="+source+" armed="+allowed+" accepted="+accepted);
             if (accepted) session.pulse();
+            else if (allowed) session.interact();
         }
         @Override public Bundle onCommand(String action, int x, int y, int z, Bundle extras, boolean resultRequested) {
             if (WallpaperManager.COMMAND_TAP.equals(action)) directPulse("command");
@@ -144,6 +145,7 @@ public final class RhineWallpaperService extends WallpaperService {
         }
         @Override public void onTouchEvent(MotionEvent event) {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) directPulse("touch");
+            else if (running()) session.interact();
             if (!prefs.getBoolean("reduced_motion", false) && (event.getActionMasked() == MotionEvent.ACTION_DOWN || event.getActionMasked() == MotionEvent.ACTION_MOVE)) {
                 android.graphics.Rect bounds = getSurfaceHolder().getSurfaceFrame();
                 if (bounds.width() > 0 && bounds.height() > 0) {

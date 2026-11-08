@@ -32,13 +32,84 @@ public final class LightHomeScene {
         vec3 rotateAxis(vec3 v,vec3 axis,float a) {
             return v*cos(a)+cross(axis,v)*sin(a)+axis*dot(axis,v)*(1.0-cos(a));
         }
-        float chemistry(vec2 p) {
-            vec2 q=fract(p*6.4)-.5, a=abs(q);
-            float hex=abs(max(a.y,.8660254*a.x+.5*a.y)-.226);
-            float ring=1.0-smoothstep(.006,.016,hex);
-            float bond=(1.0-smoothstep(.004,.012,abs(q.y)))*smoothstep(.255,.29,q.x);
-            float atom=1.0-smoothstep(.017,.028,length(q-vec2(.41,0.0)));
-            return max(ring,max(bond*.58,atom*.77));
+        float segmentDistance(vec2 p,vec2 a,vec2 b) {
+            vec2 edge=b-a;
+            return length(p-a-edge*clamp(dot(p-a,edge)/dot(edge,edge),0.,1.));
+        }
+        float fineLine(float distance,float pixel) {
+            return 1.-smoothstep(pixel*.35,pixel*1.25,distance);
+        }
+        float atom(vec2 p,vec2 center,float radius,float pixel) {
+            return 1.-smoothstep(radius,radius+pixel,length(p-center));
+        }
+        vec2 turn(vec2 p,float angle) {
+            float c=cos(angle),s=sin(angle);
+            return vec2(c*p.x-s*p.y,s*p.x+c*p.y);
+        }
+        // Two isolated fragments occupy the open margin; neither is tiled.
+        float ringFragment(vec2 p,vec2 center,float angle,float scale,float pixel) {
+            vec2 q=turn(p-center,angle)/scale;
+            if (max(abs(q.x),abs(q.y))>1.6) return 0.;
+            const vec2 nodes[5]=vec2[5](vec2(-.64,-.29),vec2(-.05,-.74),
+                    vec2(.56,-.30),vec2(.33,.47),vec2(-.49,.57));
+            float distance=1.;
+            float dots=0.;
+            for(int i=0;i<5;i++) {
+                distance=min(distance,segmentDistance(q,nodes[i],nodes[(i+1)%5]));
+                dots=max(dots,atom(q,nodes[i],.040,pixel/scale));
+            }
+            vec2 tip=vec2(1.25,-.66);
+            distance=min(distance,segmentDistance(q,nodes[2],tip));
+            float openAtom=fineLine(abs(length(q-tip)-.065)*scale,pixel);
+            return max(max(fineLine(distance*scale,pixel),dots),openAtom);
+        }
+        float chainFragment(vec2 p,vec2 center,float angle,float scale,float pixel) {
+            vec2 q=turn(p-center,angle)/scale;
+            if (max(abs(q.x),abs(q.y))>1.35) return 0.;
+            vec2 a=vec2(-.37,-.73),b=vec2(-.58,-.05),c=vec2(.05,.34),d=vec2(.58,.06);
+            float distance=min(segmentDistance(q,a,b),segmentDistance(q,b,c));
+            distance=min(distance,segmentDistance(q,c,d));
+            float dots=max(atom(q,a,.048,pixel/scale),atom(q,b,.043,pixel/scale));
+            dots=max(dots,atom(q,c,.040,pixel/scale));
+            float openAtom=fineLine(abs(length(q-d)-.060)*scale,pixel);
+            return max(max(fineLine(distance*scale,pixel),dots),openAtom);
+        }
+        float trajectoryY(float x,float phase) {
+            return .36-.19*x-.22*x*x+.025*sin(phase+.7);
+        }
+        vec3 scientificField(vec2 p,float portrait,float dark,float unit) {
+            float pixel=1./unit;
+            // Every animated coordinate closes over the same two-minute period.
+            float phase=6.28318530718*mod(uTime,120.)/120.;
+            float x=p.x+.014*sin(phase);
+            float y=-.14-.34*x-.38*x*x*x+.012*cos(phase);
+            float slope=-.34-1.14*x*x;
+            float distance=(p.y-y)/sqrt(1.+slope*slope);
+            float field=fineLine(abs(distance),pixel)*.025;
+            field+=fineLine(abs(distance-.13),pixel)*.012;
+            // A broad, shallow spill makes the field readable as part of the stage.
+            field+=(1.-smoothstep(.01,.18,abs(distance-.045)))*.008;
+            float lower=(p.y-(.53-.31*x-.23*x*x*x))/sqrt(1.+pow(-.31-.69*x*x,2.));
+            field+=fineLine(abs(lower),pixel)*.016;
+
+            float trailSlope=-.19-.44*p.x;
+            float trailDistance=abs(p.y-trajectoryY(p.x,phase))/sqrt(1.+trailSlope*trailSlope);
+            float dashes=1.-smoothstep(.26,.32,abs(fract(p.x*95.+.2*sin(phase))-.5));
+            float trailFade=1.-smoothstep(.48,.95,abs(p.x+.23));
+            field+=fineLine(trailDistance,pixel)*dashes*trailFade*.040;
+            float headX=.60*sin(phase+.65);
+            field+=atom(p,vec2(headX,trajectoryY(headX,phase)),pixel*1.45,pixel)*.075;
+
+            vec2 aspect=uSize/unit;
+            vec2 ringCenter=(mix(vec2(.14,.77),vec2(.18,.72),portrait)-.5)*aspect;
+            vec2 chainCenter=(mix(vec2(.86,.17),vec2(.84,.20),portrait)-.5)*aspect;
+            ringCenter+=vec2(sin(phase+.3),cos(phase+.3))*.007;
+            chainCenter+=vec2(cos(phase-.4),sin(phase-.4))*.005;
+            field+=ringFragment(p,ringCenter,.18+.045*sin(phase),.049,pixel)*.070;
+            field+=chainFragment(p,chainCenter,-.28+.035*cos(phase),.034,pixel)*.065;
+            float margin=smoothstep(.075,.15,vUv.y)*(1.-smoothstep(.91,.98,vUv.y));
+            vec3 contrast=mix(vec3(.75,.73,.69),vec3(.58,.61,.57),dark);
+            return contrast*min(field*margin,.09);
         }
         float noise(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
         float cardPhase(float index) {
@@ -90,10 +161,9 @@ public final class LightHomeScene {
             float spill=exp(-dot(studioCenter,studioCenter)*2.4);
             vec3 col=mix(vec3(.925,.918,.902)*(1.0-vignette*.12),
                          vec3(.043,.043,.047)*(1.0-vignette*.32)+spill*vec3(.020,.019,.017),dark);
-            // The quiet graphite motif never intrudes on the status area.
-            float motif=chemistry(p+vec2(.12,-.08+uTime*.008))*dark*.025*smoothstep(.10,.20,vUv.y);
-            if (uPhone>.5) motif*=1.0-smoothstep(.82,.92,vUv.y);
-            col+=motif*vec3(.56,.62,.50);
+            // Subtle field lines and two scattered fragments share both gallery themes.
+            vec3 field=scientificField(p,portrait,dark,unit);
+            col+=mix(-field,field,dark);
             col+=(noise(gl_FragCoord.xy)-.5)*.003;
             // The actual upstream artwork is mapped onto the 104:74.88:3.2 card.
             vec3 ro=vec3(p,3.0), rd=vec3(0.00001,0.00001,-1.0);

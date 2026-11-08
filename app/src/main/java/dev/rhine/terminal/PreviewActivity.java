@@ -25,7 +25,6 @@ public final class PreviewActivity extends Activity implements SurfaceHolder.Cal
     private GlRenderSession session;
     private SurfaceView view;
     private TextView stats;
-    private ArchivePreviewAudio audio;
     private final Runnable statsUpdate=new Runnable() {
         @Override public void run() {
             if (!resumed || stats == null) return;
@@ -55,10 +54,6 @@ public final class PreviewActivity extends Activity implements SurfaceHolder.Cal
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
         WindowManager.LayoutParams lp = getWindow().getAttributes();
         android.content.SharedPreferences prefs=getSharedPreferences("terminal",MODE_PRIVATE);
-        if (!home && prefs.getBoolean("preview_sound",false)) {
-            audio = new ArchivePreviewAudio(this);
-            setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
-        }
         PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);
         lp.preferredRefreshRate=prefs.getBoolean("reduced_motion",false)?0:power.isPowerSaveMode()?30:prefs.getInt("target_fps",120)<=60?60:120;
         getWindow().setAttributes(lp);
@@ -68,6 +63,7 @@ public final class PreviewActivity extends Activity implements SurfaceHolder.Cal
         };
         view.getHolder().addCallback(this); frame.addView(view);
         if (!home) view.setOnTouchListener((v, event) -> {
+            session.interact();
             if (!getSharedPreferences("terminal", MODE_PRIVATE).getBoolean("reduced_motion", false) && view.getWidth() > 0 && view.getHeight() > 0 && (event.getActionMasked() == MotionEvent.ACTION_DOWN || event.getActionMasked() == MotionEvent.ACTION_MOVE)) {
                 float x = Math.max(-.2f, Math.min(.2f, (event.getX() / view.getWidth() - .5f) * .4f));
                 float y = Math.max(-.2f, Math.min(.2f, (event.getY() / view.getHeight() - .5f) * .4f));
@@ -92,14 +88,15 @@ public final class PreviewActivity extends Activity implements SurfaceHolder.Cal
         top.addView(stats,new LinearLayout.LayoutParams(-2,height));
         stats.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
                 .setTitle("性能数据").setMessage(session.getStats()).setPositiveButton("关闭",null).show());
-        top.addView(new View(this),new LinearLayout.LayoutParams(0,0,1));
         TextView close=ui.button("退出预览",false);
-        top.addView(close,new LinearLayout.LayoutParams(-2,height));
+        LinearLayout.LayoutParams closePosition=new LinearLayout.LayoutParams(-2,height);
+        closePosition.setMarginStart(gap);
+        top.addView(close,closePosition);
         close.setOnClickListener(v -> finish());
         LinearLayout bottom=new LinearLayout(this);
         bottom.setOrientation(LinearLayout.HORIZONTAL);
         bottom.setGravity(Gravity.END);
-        FrameLayout.LayoutParams bottomPosition=new FrameLayout.LayoutParams(-2,height,Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);
+        FrameLayout.LayoutParams bottomPosition=new FrameLayout.LayoutParams(-2,height,Gravity.BOTTOM|Gravity.END);
         bottomPosition.setMargins(margin,0,margin,margin);
         frame.addView(bottom,bottomPosition);
         if (!home) {
@@ -111,7 +108,6 @@ public final class PreviewActivity extends Activity implements SurfaceHolder.Cal
                     .setTitle("选择演示")
                     .setItems(new String[]{"人脸识别失败（演示）","指纹识别失败（演示）",
                             "指纹传感器短触（演示）"},(dialog,item) -> {
-                        if (audio!=null) audio.stop();
                         session.playBiometricDemo(item+1);
                     }).show());
         }
@@ -121,7 +117,6 @@ public final class PreviewActivity extends Activity implements SurfaceHolder.Cal
             if (home) session.unfoldHome();
             else {
                 session.playArchiveDemo();
-                if (audio != null) audio.play();
             }
         });
         frame.setOnApplyWindowInsetsListener((v,insets) -> {
@@ -167,8 +162,8 @@ public final class PreviewActivity extends Activity implements SurfaceHolder.Cal
         battery = level >= 0 && scale > 0 ? Math.min(100, level * 100 / scale) : -1;
         session.setBattery(battery, intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0);
     }
-    @Override protected void onPause() { if (audio != null) audio.stop(); resumed = false; stats.removeCallbacks(statsUpdate); update(); super.onPause(); }
-    @Override protected void onDestroy() { if (audio != null) audio.release(); unregisterReceiver(screenReceiver); session.close(); super.onDestroy(); }
+    @Override protected void onPause() { resumed = false; stats.removeCallbacks(statsUpdate); update(); super.onPause(); }
+    @Override protected void onDestroy() { unregisterReceiver(screenReceiver); session.close(); super.onDestroy(); }
     @Override public void surfaceCreated(SurfaceHolder holder) { ready = true; android.graphics.Rect r = holder.getSurfaceFrame(); session.setSurface(holder.getSurface(), r.width(), r.height()); update(); }
     @Override public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) { session.setSurface(holder.getSurface(), w, h); update(); }
     @Override public void surfaceDestroyed(SurfaceHolder holder) { ready = false; update(); session.destroySurface(); }

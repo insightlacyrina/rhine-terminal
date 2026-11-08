@@ -27,6 +27,11 @@ final class ArchiveFallback {
 
     void draw(Canvas canvas, ArchiveTimeline.FrameState frame, int battery, boolean plugged,
               boolean locked, boolean clock, String displayName, boolean phoneLayout) {
+        draw(canvas,frame,battery,plugged,locked,clock,displayName,phoneLayout,null,0);
+    }
+
+    void draw(Canvas canvas, ArchiveTimeline.FrameState frame, int battery, boolean plugged,
+              boolean locked, boolean clock, String displayName, boolean phoneLayout, String[] telemetry, long elapsedMillis) {
         if (frame.stage == ArchiveTimeline.HOME) {
             drawHome(canvas,paint,true,false,phoneLayout);
             return;
@@ -35,7 +40,10 @@ final class ArchiveFallback {
         float side=Math.min(w,h);
         boolean portrait=h>w;
         boolean denied=frame.intensity>0;
-        canvas.drawColor(denied ? 0xff0e0c0d : 0xffe4dfdc);
+        boolean dark=denied || frame.idleBlack;
+        float mix=Math.max(0,Math.min(1,frame.denyMix));
+        canvas.drawColor(android.graphics.Color.rgb(
+                Math.round(228+(14-228)*mix),Math.round(223+(12-223)*mix),Math.round(220+(13-220)*mix)));
         loop.reset();
         for (int i=0;i<=96;i++) {
             double a=2*Math.PI*i/96;
@@ -47,17 +55,19 @@ final class ArchiveFallback {
         }
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(side*.031f);
-        paint.setColor(denied?0xff57301e:0xffb4aca4);
+        paint.setColor(dark?0xff46474b:0xffb4aca4);
         canvas.drawPath(loop,paint);
         paint.setStrokeWidth(side*.021f);
-        paint.setColor(denied?0xff89472b:0xfff1e8df);
+        paint.setColor(dark?0xff737678:0xfff1e8df);
         canvas.drawPath(loop,paint);
         if (denied) {
             paint.setColor(0xfff26e12); paint.setStrokeWidth(2.4f);
             canvas.drawRect(1,1,w-1,h-1,paint);
         }
         paint.setStyle(Paint.Style.FILL);
-        overlay.draw(canvas,w,h,frame.stage,frame.intensity,frame.nativeFailure,Build.MODEL,battery,plugged,locked,clock,frame.biometricDemo,displayName,phoneLayout);
+        overlay.draw(canvas,w,h,frame.stage,frame.intensity,frame.nativeFailure,Build.MODEL,battery,plugged,locked,clock,
+                frame.biometricDemo,displayName,phoneLayout,telemetry,elapsedMillis,dark);
+        if (frame.idleBlack && mix>.5f) overlay.drawIdlePopup(canvas,w,h,phoneLayout);
     }
 
     static void drawHome(Canvas canvas, Paint paint, boolean light, boolean darkGallery) {

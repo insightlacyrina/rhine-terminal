@@ -18,6 +18,8 @@ public final class GpuTerminalRenderer {
     private static final int MAX_UI_PIXELS=8_388_608;
     private final ArchiveLockOverlay overlay;
     private final LockBlackoutPass blackout = new LockBlackoutPass();
+    private final GpuLockTelemetry telemetryPass = new GpuLockTelemetry();
+    private String[] telemetry;
     private final SpecimenScenePass snapshot = new SpecimenScenePass();
     private final Context context;
     private final SharedPreferences prefs;
@@ -29,7 +31,7 @@ public final class GpuTerminalRenderer {
     private int sculptureProgram, stageProgram, hudProgram;
     private int vao, vbo, ebo, planeVao, uiTexture, indexCount;
     private int mvpLocation, modelLocation, timeLocation, alertLocation, pulseLocation;
-    private int birthLocation, verifyLocation, peelLocation, severityLocation;
+    private int birthLocation, verifyLocation, peelLocation, disorderLocation, idleBlackLocation;
     private int stageSize, stageDeny, stageDenyMix, stageSeconds, stageBirth, stageGlitch;
     private int hudTexture, hudSize, hudPhases, hudScan, hudScanHead, hudScanOpacity, hudScanSeconds, hudWarningAge, hudPhone;
     private Bitmap uiBitmap;
@@ -37,7 +39,7 @@ public final class GpuTerminalRenderer {
     private long lastUiMinute = Long.MIN_VALUE, animationEpoch = Long.MIN_VALUE;
     private boolean lastLocked, lastPlugged, lastClock, initialized;
     private int lastStage, lastSeverity, lastBattery, lastBiometricDemo;
-    private boolean lastNative, lastPhone;
+    private boolean lastNative, lastPhone, lastDarkPalette, lastIdlePopup;
     private String lastDisplayName;
 
     public GpuTerminalRenderer(Context context) {
@@ -45,6 +47,8 @@ public final class GpuTerminalRenderer {
         overlay = new ArchiveLockOverlay(context);
         prefs = context.getSharedPreferences("terminal", Context.MODE_PRIVATE);
     }
+
+    public void setTelemetry(String[] snapshot) { telemetry=snapshot; }
 
     /** Invoke with a current GLES 3 context; this also handles a newly recreated context. */
     public void initialize() {
@@ -63,7 +67,8 @@ public final class GpuTerminalRenderer {
             birthLocation = location(sculptureProgram, "uBirth");
             verifyLocation = location(sculptureProgram, "uVerify");
             peelLocation = location(sculptureProgram, "uExit");
-            severityLocation = location(sculptureProgram, "uDenyStrength");
+            disorderLocation = location(sculptureProgram, "uDisorder");
+            idleBlackLocation = location(sculptureProgram, "uIdleBlack");
             stageSize = location(stageProgram, "uSize");
             stageDeny = location(stageProgram, "uDeny");
             stageDenyMix = location(stageProgram, "uDenyMix");
@@ -143,15 +148,19 @@ public final class GpuTerminalRenderer {
         float time = reduced ? 0 : (float)((frameNanos-animationEpoch)*1e-9);
         boolean clock = prefs.getBoolean("archive_clock", true);
         long minute = System.currentTimeMillis() / 60000L;
+        boolean darkPalette=frame.denyMix>.5f;
+        boolean idlePopup=frame.idleBlack && darkPalette;
         if (lastUiMinute != minute || lastStage != frame.stage || lastSeverity != frame.intensity
                 || lastLocked != locked || lastBattery != batteryPct || lastPlugged != plugged
                 || lastClock != clock || lastNative != frame.nativeFailure || lastBiometricDemo != frame.biometricDemo
-                || !displayName.equals(lastDisplayName) || lastPhone != phoneLayout) {
+                || !displayName.equals(lastDisplayName) || lastPhone != phoneLayout || lastDarkPalette != darkPalette
+                || lastIdlePopup != idlePopup) {
             uiBitmap.eraseColor(0);
             uiCanvas.save();
             uiCanvas.scale(uiWidth/(float)width,uiHeight/(float)height);
             overlay.draw(uiCanvas,width,height,frame.stage,frame.intensity,frame.nativeFailure,
-                    device,batteryPct,plugged,locked,clock,frame.biometricDemo,displayName,phoneLayout);
+                    device,batteryPct,plugged,locked,clock,frame.biometricDemo,displayName,phoneLayout,null,0,darkPalette);
+            if (idlePopup) overlay.drawIdlePopup(uiCanvas,width,height,phoneLayout);
             uiCanvas.restore();
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0);
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, uiTexture);
@@ -161,7 +170,8 @@ public final class GpuTerminalRenderer {
             lastLocked=locked; lastBattery=batteryPct; lastPlugged=plugged; lastClock=clock;
             lastNative=frame.nativeFailure;
             lastBiometricDemo=frame.biometricDemo;
-            lastDisplayName=displayName; lastPhone=phoneLayout;
+            lastDisplayName=displayName; lastPhone=phoneLayout; lastDarkPalette=darkPalette;
+            lastIdlePopup=idlePopup;
         }
 
         GLES30.glDisable(GLES30.GL_SCISSOR_TEST);
@@ -173,37 +183,36 @@ public final class GpuTerminalRenderer {
         GLES30.glBindVertexArray(planeVao);
         if (frame.stage != ArchiveTimeline.HOME) {
             boolean recovering = frame.intensity == 0 && frame.recoveryGlitch > .005f;
-            boolean postProcess = !reduced && (frame.intensity>0 || recovering) && blackout.begin(width,height);
+            float glitch=reduced ? 0 : Math.max(frame.burst,frame.recoveryGlitch);
+            boolean postProcess = glitch>.001f && blackout.begin(width,height);
             GLES30.glClear(GLES30.GL_DEPTH_BUFFER_BIT);
             GLES30.glUseProgram(stageProgram);
             GLES30.glUniform2f(stageSize,width,height);
             GLES30.glUniform1f(stageDeny,frame.intensity);
-            GLES30.glUniform1f(stageDenyMix,reduced ? (frame.intensity>0 ? 1 : 0) : frame.denyMix);
+            GLES30.glUniform1f(stageDenyMix,reduced ? (darkPalette ? 1 : 0) : frame.denyMix);
             GLES30.glUniform1f(stageSeconds,reduced ? 0 : frame.seconds);
             GLES30.glUniform1f(stageBirth,frame.birth);
-            GLES30.glUniform1f(stageGlitch,reduced || frame.seconds<.18f ? 0 : frame.burst);
+            GLES30.glUniform1f(stageGlitch,glitch);
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES,0,3);
             if (frame.birth > 0) drawSculpture(time, reduced ? 0 : tiltX, reduced ? 0 : tiltY, frame, reduced, phoneLayout);
             if (postProcess) {
-                float strength = recovering ? frame.recoveryGlitch : (frame.intensity==2 ? 1 : .67f);
-                blackout.present(width,height,planeVao,frame.seconds,frame.burst,strength,recovering);
+                blackout.present(width,height,planeVao,frame.seconds,frame.burst,glitch,recovering);
             }
             if (frame.foundation > 0 || frame.card > 0 || frame.telemetry > 0 || frame.caption > 0) drawHud(frame,reduced,phoneLayout);
+            if (frame.stage>=ArchiveTimeline.IDLE && telemetry!=null)
+                telemetryPass.draw(overlay,planeVao,width,height,phoneLayout,darkPalette,
+                        telemetry,(frameNanos-animationEpoch)/1_000_000L,frame.telemetry);
         }
         if (frame.snapshot > .001f) drawSnapshot(time, frame, phoneLayout);
     }
 
     private void drawSculpture(float time, float tx, float ty, ArchiveTimeline.FrameState frame, boolean reduced, boolean phoneLayout) {
-        float recoil = reduced ? 0 : frame.burst;
-        float shock = reduced || frame.intensity==0 ? 0
-                : Math.max(0,1-frame.seconds/.185f);
-        shock *= shock;
         Matrix.setIdentityM(model,0);
-        Matrix.translateM(model,0,tx*.025f+shock*.28f,-ty*.025f+shock*.15f,shock*.19f);
-        Matrix.rotateM(model,0,16f+ty*9f+(float)Math.sin(time*.11f)*3+recoil*2.7f+shock*23f,1,0,0);
+        Matrix.translateM(model,0,tx*.025f,-ty*.025f,0);
+        Matrix.rotateM(model,0,16f+ty*9f+(float)Math.sin(time*.11f)*3,1,0,0);
         Matrix.rotateM(model,0,tx*12f+(float)Math.sin(time*.07f)*9-(1-frame.birth)*32,0,1,0);
         boolean portrait = height > width;
-        Matrix.rotateM(model,0,(portrait ? 43f : -2f)-recoil*3.6f-shock*30f,0,0,1);
+        Matrix.rotateM(model,0,portrait ? 43f : -2f,0,0,1);
         Matrix.multiplyMM(viewModel,0,view,0,model,0);
         Matrix.multiplyMM(mvp,0,projection,0,viewModel,0);
         int side = Math.min(width,height);
@@ -223,12 +232,13 @@ public final class GpuTerminalRenderer {
         GLES30.glUniformMatrix4fv(mvpLocation,1,false,mvp,0);
         GLES30.glUniformMatrix4fv(modelLocation,1,false,model,0);
         GLES30.glUniform1f(timeLocation,time);
-        GLES30.glUniform1f(alertLocation,reduced ? (frame.intensity>0 ? 1 : 0) : frame.denyMix);
+        GLES30.glUniform1f(alertLocation,reduced ? (frame.denyMix>.5f ? 1 : 0) : frame.denyMix);
         GLES30.glUniform1f(pulseLocation,reduced ? 0 : frame.pulse);
         GLES30.glUniform1f(birthLocation,frame.birth);
         GLES30.glUniform1f(verifyLocation,frame.scan);
         GLES30.glUniform1f(peelLocation,frame.peel);
-        GLES30.glUniform1f(severityLocation,frame.seconds<.18f?0:recoil);
+        GLES30.glUniform1f(disorderLocation,reduced ? 0 : frame.disorder);
+        GLES30.glUniform1f(idleBlackLocation,frame.idleBlack ? 1 : 0);
         GLES30.glDrawElementsInstanced(GLES30.GL_TRIANGLES,indexCount,GLES30.GL_UNSIGNED_INT,0,SculptureScene.FIN_COUNT);
         GLES30.glDisable(GLES30.GL_DEPTH_TEST);
     }
@@ -265,6 +275,7 @@ public final class GpuTerminalRenderer {
     public void release() {
         initialized=false;
         blackout.release();
+        telemetryPass.release();
         snapshot.release(true);
         if (sculptureProgram!=0) GLES30.glDeleteProgram(sculptureProgram);
         if (stageProgram!=0) GLES30.glDeleteProgram(stageProgram);

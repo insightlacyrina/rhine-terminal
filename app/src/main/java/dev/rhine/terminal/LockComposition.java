@@ -33,17 +33,13 @@ public final class LockComposition {
             paper*=1.0-.09*exp(-dot(shadow,shadow))*uBirth;
             if(uDenyMix>0.001) {
                 vec3 dark=vec3(.043,.043,.047)+vec3(.012,.007,.003)*(1.0-vignette);
+                // Disturbance is transient; the settled dark paper has no moving stripes.
                 float tear=fract(floor(px.y*.11)*.618033+floor(uSeconds*13.0)*.363);
-                float strip=step(uDeny>1.5?.87:.96,tear);
-                float scan=1.0-smoothstep(.16,.40,abs(fract(px.y*.20)-.5));
-                dark+=vec3(.12,.043,.014)*strip*(.12+.75*uGlitch);
-                dark-=vec3(.012)*scan*(.25+.75*uGlitch);
-                vec2 edge=min(px,uSize-px);
-                float line=1.0-smoothstep(1.5,3.1,min(edge.x,edge.y));
-                dark=mix(dark,vec3(.949,.431,.071),line*.96);
+                float strip=step(.96,tear);
+                dark+=vec3(.045,.016,.005)*strip*clamp(uGlitch,0.0,1.0);
                 paper=mix(paper,dark,uDenyMix);
             }
-            frag=vec4(paper+grain*.012,1);
+            frag=vec4(paper+grain*.012*(1.0-uDenyMix),1);
         }
         """;
 
@@ -68,13 +64,13 @@ public final class LockComposition {
             vec4 phases=clamp(uUiPhases,0.0,1.0);
             vec2 cardMin=portrait?vec2(.12,.342):vec2(.155,.281);
             vec2 cardMax=portrait?vec2(.53,.49):vec2(.352,.55);
-            vec2 panelMin=portrait?vec2(.085,.555):vec2(.47,.67);
-            vec2 panelMax=portrait?vec2(.915,.690):vec2(.90,.80);
+            float shortest=min(uSize.x,uSize.y);
+            float identityHalf=shortest*(portrait?.095:.085)/uSize.y;
+            vec2 panelMin=vec2(portrait?.48:.68,.5-identityHalf);
+            vec2 panelMax=vec2(.95,.5+identityHalf);
             if (uPhone>.5) {
                 cardMin=portrait?vec2(.08,.375):vec2(.06,.34);
                 cardMax=portrait?vec2(.40,.49):vec2(.275,.64);
-                panelMin=portrait?vec2(.08,.575):vec2(.67,.51);
-                panelMax=portrait?vec2(.92,.66):vec2(.94,.73);
             }
             bool inCard=all(greaterThanEqual(p,cardMin-.001)) && all(lessThanEqual(p,cardMax+.001));
             bool inPanel=all(greaterThanEqual(p,panelMin-.001)) && all(lessThanEqual(p,panelMax+.001));
@@ -85,7 +81,7 @@ public final class LockComposition {
             if (uWarningAge>=0.0) {
                 float x=portrait?uSize.x*.69:max(uSize.x*.466,uSize.x*.352+s*.162);
                 if (uPhone>.5) x=uSize.x*(portrait?.65:.47);
-                vec2 q=(p*uSize-vec2(x,uSize.y*(uPhone>.5?(portrait?.44:.48):(portrait?.47:.50))))/s;
+                vec2 q=(p*uSize-vec2(x,uSize.y*(portrait?.64:(uPhone>.5?.48:.50))))/s;
                 if (abs(q.x)<.145 && abs(q.y)<.075) {
                     if (q.y>.004) ui.rgb*=q.y>.036 ? step(.50,uWarningAge) : step(.26,uWarningAge);
                     float y=q.y+.052;

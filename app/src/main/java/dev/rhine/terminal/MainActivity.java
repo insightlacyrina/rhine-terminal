@@ -108,7 +108,8 @@ public final class MainActivity extends Activity {
         addValue(nameRow, displayName);
         nameRow.setOnClickListener(view -> showNameEditor(displayName));
         toggle(settings, "显示主题时钟", "archive_clock", true);
-        toggle(settings, "预览音效", "preview_sound", false);
+        toggle(settings, "主题音效", "preview_sound", false);
+        toggle(settings, "5 秒闲置黑化", "idle_black", true);
 
         section(settings, "显示");
         selector(settings, "目标帧率", new String[]{"120 帧", "60 帧"},

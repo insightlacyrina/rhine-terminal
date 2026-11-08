@@ -44,7 +44,7 @@ public final class SculptureScene {
         layout(location=0) in vec3 aPosition;
         layout(location=1) in vec3 aNormal;
         uniform mat4 uMvp, uModel;
-        uniform float uTime, uPulse, uBirth, uVerify, uExit, uAlert;
+        uniform float uTime, uPulse, uBirth, uVerify, uExit, uAlert, uDisorder;
         out vec3 vLocal, vNormal, vPosition;
         out float vSeed, vPulse, vParam, vTip;
         const float uCount=400.0, uRadius=285.0, uAspect=0.95, uDepth=95.0, uTwist=2.0;
@@ -54,7 +54,6 @@ public final class SculptureScene {
         #define uAssemble uBirth
         #define uDissolve uExit
         #define uAlign (uVerify*0.5)
-        #define uDisorder (uAlert*0.12)
         
         float rl_hash11(float p) {
             p = fract(p * 0.1031);
@@ -161,7 +160,7 @@ public final class SculptureScene {
         precision highp float;
         in vec3 vLocal, vNormal, vPosition;
         in float vSeed, vPulse, vParam, vTip;
-        uniform float uAlert, uTime, uVerify;
+        uniform float uAlert, uTime, uVerify, uIdleBlack;
         out vec4 fragColor;
         
         float rl_hash11(float p) {
@@ -203,11 +202,24 @@ public final class SculptureScene {
             vec3 orange=rl_toLinear(vec3(1.0,0.482,0.0));
             vec3 lime=rl_toLinear(vec3(0.725,0.894,0.196));
             float scan=smoothstep(0.55,1.0,sin(vParam*6.2831853*3.0-uTime*2.4));
-            vec3 glow=rim*orange*(0.25+1.6*scan)*uAlert;
-            glow+=vPulse*rim*mix(lime*0.9,orange*1.4,uAlert);
-            glow+=uVerify*rim*orange*0.8*step(0.55,fract(vParam*18.0-uTime*1.2));
+            // The held black rest keeps the graphite finish without the denial scan.
+            float warning=uAlert*(1.0-clamp(uIdleBlack,0.0,1.0));
+            vec3 glow=rim*orange*(0.25+1.6*scan)*warning;
+            glow+=vPulse*rim*mix(lime*0.9,orange*1.4,warning)*(1.0-uIdleBlack);
+            glow+=uVerify*rim*orange*0.8*step(0.55,fract(vParam*18.0-uTime*1.2))*(1.0-uIdleBlack);
             glow+=vTip*rim*vec3(1.0,0.92,0.8)*1.4;
             vec3 linear=rlBody*(0.48+0.66*diffuse+0.12*bounce)+vec3(spec*0.12)+glow;
+            // Analytic studio reflections approximate the upstream rough dielectric
+            // environment on dark fins without an HDR cubemap or a second pass.
+            // Broad faces use a softer lobe; the upstream bevel is less rough.
+            vec3 reflected=reflect(-view,n);
+            float softbox=pow(max(dot(reflected,normalize(vec3(-0.48,0.72,0.50))),0.0),mix(7.0,18.0,bevel));
+            float fillbox=pow(max(dot(reflected,normalize(vec3(0.70,0.22,0.68))),0.0),mix(5.0,12.0,bevel));
+            float fresnel=pow(1.0-max(dot(n,view),0.0),5.0);
+            vec3 reflectedLight=vec3(0.085,0.082,0.078)*softbox
+                              +vec3(0.030,0.035,0.043)*fillbox
+                              +vec3(0.012,0.014,0.018)*fresnel;
+            linear+=reflectedLight*clamp(uAlert,0.0,1.0);
             linear=max(linear,vec3(0.0));
             fragColor=vec4(clamp(pow(linear,vec3(1.0/2.2)),0.0,1.0),1.0);
         }

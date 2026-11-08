@@ -61,9 +61,9 @@ final class LockBlackoutPass {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D,color);
         glUniform2f(sizeLocation,width,height);
-        glUniform1f(secondsLocation,recovering ? seconds+.30f : seconds);
-        glUniform1f(burstLocation,recovering ? 0 : Math.min(1,.58f+burst));
-        glUniform1f(severityLocation,strength);
+        glUniform1f(secondsLocation,seconds);
+        glUniform1f(burstLocation,0);
+        glUniform1f(severityLocation,Math.max(0,Math.min(1,strength)));
         glDrawArrays(GL_TRIANGLES,0,3);
     }
 

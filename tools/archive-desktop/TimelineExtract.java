@@ -13,11 +13,11 @@ public final class TimelineExtract {
             s.reset();
             ArchiveTimeline.demo(s, Math.min(ms, ArchiveTimeline.DEMO_MS - 1));
             if (ms != 0) out.append(',');
-            out.append(String.format(Locale.US, "[%d,%d,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f]",
+            out.append(String.format(Locale.US, "[%d,%d,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f]",
                     s.stage, s.intensity, s.birth, s.pulse, s.scan, s.peel, s.snapshot,
                     s.seconds, s.scanHead, s.scanOpacity, s.foundation, s.card,
                     s.telemetry, s.caption, s.burst, s.snapshotTravel, s.snapshotScan,
-                    s.snapshotCorners, s.snapshotDesat, s.denyMix, s.recoveryGlitch));
+                    s.snapshotCorners, s.snapshotDesat, s.denyMix, s.recoveryGlitch, s.disorder));
         }
         out.append("],\"motion\":[");
         for (int ms = 0; ms <= 24000; ms += 5) {

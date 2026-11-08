@@ -285,6 +285,7 @@
         snapshotDesat: v(18),
         denyMix: v(19),
         recoveryGlitch: v(20),
+        disorder: v(21),
       };
     }
     const niriSvg = new DOMParser().parseFromString(
@@ -634,7 +635,8 @@
         return;
       }
       const recovering = !f.deny && f.recoveryGlitch > .005;
-      const postProcess = f.deny || recovering;
+      const glitch = Math.max(f.burst, f.recoveryGlitch);
+      const postProcess = glitch > .001;
       if (postProcess) { ensureFramebuffer(w,h); gl.bindFramebuffer(gl.FRAMEBUFFER,fb); gl.viewport(0,0,fbW,fbH); gl.clear(gl.DEPTH_BUFFER_BIT); }
       gl.useProgram(stage);
       gl.uniform2f(un(stage, "uSize"), w, h);
@@ -642,7 +644,7 @@
       u(stage, "uDenyMix", f.denyMix);
       u(stage, "uSeconds", f.seconds);
       u(stage, "uBirth", f.birth);
-      u(stage, "uGlitch", f.seconds < .18 ? 0 : f.burst);
+      u(stage, "uGlitch", glitch);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (f.birth > 0) {
         let size = Math.round(
@@ -653,8 +655,7 @@
         gl.enable(gl.DEPTH_TEST);
         gl.depthFunc(gl.LEQUAL);
         gl.useProgram(obj);
-        let shock = f.deny ? Math.max(0, 1-f.seconds/.185)**2 : 0;
-        let [model, mvp] = matrices(t, portrait, f.burst, shock, f.birth);
+        let [model, mvp] = matrices(t, portrait, 0, 0, f.birth);
         for (let i = 0; i < 16; i += 4) {
           mvp[i] = (mvp[i] * size) / w + mvp[i + 3] * ((2 * cx) / w - 1);
           mvp[i + 1] =
@@ -669,7 +670,8 @@
           uVerify: f.scan,
           uExit: f.peel,
           uAlert: f.denyMix,
-          uDenyStrength: f.burst,
+          uDisorder: f.disorder,
+          uIdleBlack: 0,
         }))
           u(obj, n, v);
         gl.bindVertexArray(vao);
@@ -681,9 +683,9 @@
       if (postProcess) {
         gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,w,h); gl.useProgram(blackout);
         gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,fbTex); gl.uniform1i(un(blackout,'uScene'),0);
-        gl.uniform2f(un(blackout,'uSize'),w,h); u(blackout,'uSeconds',f.seconds+(recovering ? .30 : 0));
-        u(blackout,'uBurst',recovering ? 0 : Math.min(1,.58+f.burst));
-        u(blackout,'uSeverity',recovering ? f.recoveryGlitch : (f.deny===2?1:.67));
+        gl.uniform2f(un(blackout,'uSize'),w,h); u(blackout,'uSeconds',f.seconds);
+        u(blackout,'uBurst',0);
+        u(blackout,'uSeverity',glitch);
         gl.drawArrays(gl.TRIANGLES,0,3);
       }
       if (text) {

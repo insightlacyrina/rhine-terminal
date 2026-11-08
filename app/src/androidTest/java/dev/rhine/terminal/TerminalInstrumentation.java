@@ -21,6 +21,7 @@ public final class TerminalInstrumentation extends Instrumentation {
         Bundle result = new Bundle();
         try {
             testArchiveTimeline();
+            testIdleBlackout();
             testInstancedFinMesh();
             testRenderPortraitAndLandscape();
             testPhoneFallbackLayout();
@@ -79,6 +80,46 @@ public final class TerminalInstrumentation extends Instrumentation {
         ArchiveTimeline.demo(frame,16100);
         check(frame.peel > .6f && frame.snapshot > .99f && frame.snapshotTravel < .7f,
                 "Peel exposes the returning Home card");
+    }
+
+    private static void testIdleBlackout() {
+        LockIdleTimeline idle = new LockIdleTimeline();
+        ArchiveTimeline.FrameState frame = new ArchiveTimeline.FrameState();
+        long start = 1_000_000_000L;
+        idle.reset(start);
+        frame.reset(); idle.apply(frame,start+4_999_000_000L,true,false);
+        check(!frame.idleBlack, "Inactivity waits five seconds");
+        frame.reset(); idle.apply(frame,start+5_125_000_000L,true,false);
+        check(frame.idleBlack && frame.burst>0 && frame.intensity==0,
+                "Idle entry has a separate transient without an authentication warning");
+        frame.reset(); idle.apply(frame,start+5_500_000_000L,true,false);
+        check(frame.idleBlack && frame.burst==0 && frame.recoveryGlitch==0 && frame.disorder==0,
+                "All idle disturbance ends exactly at 500 ms");
+        frame.reset(); idle.apply(frame,start+120_000_000_000L,true,false);
+        check(frame.idleBlack && frame.denyMix==1 && frame.burst==0,
+                "Settled black remains calm indefinitely");
+        idle.interact(start+120_000_000_000L);
+        frame.reset(); idle.apply(frame,start+119_990_000_000L,true,false);
+        check(frame.idleBlack && frame.denyMix==1, "A late frame preserves touch recovery");
+        frame.reset(); idle.apply(frame,start+120_275_000_000L,true,false);
+        check(frame.idleBlack && Math.abs(frame.denyMix-.5f)<.001f && frame.burst==0,
+                "Touch recovers smoothly without another tear");
+        frame.reset(); idle.apply(frame,start+120_550_000_000L,true,false);
+        check(!frame.idleBlack && frame.denyMix==0, "Touch restores the paper palette");
+        frame.reset(); idle.apply(frame,start+125_125_000_000L,true,true);
+        check(frame.idleBlack && frame.denyMix==1 && frame.burst==0, "Reduced motion omits the entry tear");
+        frame.reset(); idle.apply(frame,start+126_000_000_000L,false,false);
+        check(!frame.idleBlack, "Leaving keyguard cancels the inactivity state");
+        frame.reset(); frame.deny(1,false,2);
+        check(frame.burst<.001f && frame.disorder>.11f, "Denial settles its tear while retaining gentle shape disorder");
+        Bitmap bitmap=Bitmap.createBitmap(900,1980,Bitmap.Config.ARGB_8888);
+        try {
+            Canvas canvas=new Canvas(bitmap);
+            frame.reset(); frame.idleBlack=true; frame.denyMix=1;
+            new ArchiveFallback().draw(canvas,frame,73,false,true,false,LockDisplayName.DEFAULT,true);
+            check(bitmap.getPixel(468,1213)==android.graphics.Color.BLACK,
+                    "Idle retains an opaque black status popup after all disturbance ends");
+        } finally { bitmap.recycle(); }
     }
 
     private static void testInstancedFinMesh() {

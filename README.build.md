@@ -66,7 +66,7 @@ python3 tools/archive-desktop/build.py
 python3 tools/carbon-preview/build.py
 ```
 
-Open either preview in Chrome and choose an orientation. The archive preview offers light and graphite specimen wallpapers and a timeline for the lock scene. The carbon preview adds sample telemetry to the graphite wallpaper. See [export and verification tools](tools/archive-desktop/README.md) for wallpaper PNGs. Android's foreground preview supports opt-in preview audio. The archive timeline is visual only.
+Open either preview in Chrome and choose an orientation. The archive preview offers light and graphite specimen wallpapers and a timeline for the lock scene. The carbon preview adds sample telemetry to the graphite wallpaper. See [export and verification tools](tools/archive-desktop/README.md) for wallpaper PNGs. Android previews and lock wallpaper share the opt-in 主题音效 setting. The archive timeline is visual only.
 
 The accelerometer fallback can be checked with a deterministic synthetic trace using JDK 17.
 
