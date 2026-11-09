@@ -37,6 +37,14 @@ Outputs:
 
 The debug APK uses the Android debug signing key and can be installed directly on a development device. Release builds require your own signing configuration before distribution.
 
+## GitHub releases
+
+Every GitHub version release must include the compiled, tested APK as a downloadable asset.
+
+1. Build from the commit being released. Confirm the APK package version matches the `v<versionName>` tag. Use the established signing key so existing installations can upgrade.
+2. Create a draft GitHub Release targeting that commit. Attach the APK as `RhineTerminal-<versionName>-debug.apk` for the current debug distribution, and include its SHA-256 in the release notes.
+3. Confirm the uploaded asset matches the local checksum, then publish. Verify the published asset and the tag after publication.
+
 ## Device tests
 
 With a connected Android device or emulator, install both debug APKs and run:
