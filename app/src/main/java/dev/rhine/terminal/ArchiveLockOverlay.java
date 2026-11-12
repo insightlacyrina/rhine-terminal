@@ -36,6 +36,7 @@ public final class ArchiveLockOverlay {
     private static final int INK=0xff171a17, PAPER=0xfff4efec, MUTED=0xff737570;
     private static final int LIME=0xffc3fa3d, ORANGE=0xfff26e12, COPPER=0xffa85d37;
     private final Paint P=new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF telemetryRegion=new RectF();
     private String[] telemetrySource;
     private final String[] telemetryLines=new String[14];
     private int telemetryCount;
@@ -133,24 +134,27 @@ public final class ArchiveLockOverlay {
         rect(c,sealX-sealHalf,sealY-sealHalf,sealX+sealHalf,sealY+sealHalf,withAlpha(denied?0xff36221b:INK,alpha));
         seal(c,sealX,sealY,sealHalf*.71f,alpha,denied?ORANGE:PAPER);
         if (stage >= ArchiveTimeline.IDLE) {
-            float fieldX=width*(portrait?.17f:.155f);
+            float fieldX=width*(portrait?.48f:.155f);
             text(c,"FIELD RECORD",fieldX,height*(portrait?.323f:.25f),micro,MONO,muted);
             text(c,"CERAMIC STUDY",fieldX,height*(portrait?.337f:.273f),text*.88f,BOLD,ink);
-            float anchorX=width*(portrait?.56f:.326f), anchorY=height*(portrait?.352f:.235f);
-            line(c,width*(portrait?.29f:.225f),height*(portrait?.336f:.27f),anchorX,anchorY,
+            float anchorX=width*(portrait?.82f:.326f), anchorY=height*(portrait?.352f:.235f);
+            float leaderX=portrait?fieldX+P.measureText("CERAMIC STUDY")+u*.012f:width*.225f;
+            line(c,leaderX,height*(portrait?.336f:.27f),anchorX,anchorY,
                     withAlpha(denied?PAPER:INK,.35f*alpha),Math.max(1,u*.0006f));
             circle(c,anchorX,anchorY,u*.002f,muted);
         }
         if (showClock) clock(c,width,height,portrait,u,ink,muted,false);
         if (stage>=1) identity(c,width,height,false,portrait,denied||darkPalette,displayName,state.locked);
         if(scan) {
-            float cx=width*(portrait?.66f:.43f), cy=height*(portrait?.46f:.48f);
-            float trackY=cy+u*.108f, half=u*.0715f;
-            text(c,"VISUAL SCAN",cx-half,trackY-u*.012f,micro,MONO,INK);
-            rect(c,cx-half,trackY-u*.001f,cx+half,trackY+u*.001f,0x55737570);
+            // Tablet portrait places the scanner below the identity block and above the caption.
+            float cx=width*(portrait?.69f:.43f), cy=height*(portrait?.65f:.48f);
+            float scanUnit=portrait?Math.min(u,height*.61f):u;
+            float trackY=cy+scanUnit*.108f, half=scanUnit*.0715f;
+            text(c,"VISUAL SCAN",cx-half,trackY-scanUnit*.012f,micro,MONO,INK);
+            rect(c,cx-half,trackY-scanUnit*.001f,cx+half,trackY+scanUnit*.001f,0x55737570);
         }
         if (stage==ArchiveTimeline.EXIT) {
-            text(c,"VISUAL DEMO / RELEASE",width*(portrait?.085f:.045f),height*(portrait?.725f:.845f),
+            text(c,"VISUAL DEMO / RELEASE",width*(portrait?.48f:.045f),height*(portrait?.725f:.845f),
                     u*.013f,MONO,ink);
         }
         if(denied) {
@@ -242,6 +246,17 @@ public final class ArchiveLockOverlay {
         line(c,left+u*.09f,detailY-u*.003f,right,detailY-u*.003f,withAlpha(foreground,.35f),Math.max(1,u*.0006f));
     }
 
+    /** Shared by the Canvas log and its cropped GLES texture. */
+    static void telemetryBounds(float w,float h,boolean phone,RectF bounds) {
+        if (h<=w) {
+            bounds.set(w*.024f,h*.57f,w*.212f,h*.79f);
+        } else if (phone) {
+            bounds.set(w*.035f,h*.505f,w*.255f,h*.565f);
+        } else {
+            bounds.set(w*.085f,h*.705f,w*.235f,h*.835f);
+        }
+    }
+
     /** Draw a clipped, bounded live log. The caller samples away from the render thread. */
     void drawTelemetry(Canvas c,float w,float h,boolean phone,boolean denied,String[] snapshot,long elapsedMillis) {
         if(snapshot==null || snapshot.length==0) return;
@@ -260,10 +275,9 @@ public final class ArchiveLockOverlay {
         if(telemetryCount==0) return;
         boolean portrait=h>w;
         float u=Math.min(w,h);
-        float x=w*(portrait?.035f:.024f);
-        float right=w*(portrait?(phone?.255f:.235f):.212f);
-        float top=h*(portrait?(phone?.505f:.41f):.57f);
-        float bottom=h*(portrait?(phone?.565f:.55f):.79f);
+        telemetryBounds(w,h,phone,telemetryRegion);
+        float x=telemetryRegion.left, right=telemetryRegion.right;
+        float top=telemetryRegion.top, bottom=telemetryRegion.bottom;
         float size=Math.max(7f,u*(portrait?.008f:.0085f));
         float row=size*1.58f;
         int ink=denied?0xffd8c7b8:0xff252522;
@@ -298,7 +312,7 @@ public final class ArchiveLockOverlay {
     }
     /** Visual identification only: the system remains responsible for unlocking. */
     private void lockMark(Canvas c,float w,float h,boolean portrait,boolean denied,float u,String displayName) {
-        float l=w*(portrait?.12f:.155f), r=w*(portrait?.53f:.352f);
+        float l=w*(portrait?.085f:.155f), r=w*(portrait?.415f:.352f);
         float t=h*(portrait?.36f:.31f), b=h*(portrait?.49f:.55f);
         float rail=w*(portrait?.25f:.223f);
         rect(c,l,t,r,b,denied?0xff0b0d0c:0xff0c0f0e);
@@ -326,8 +340,9 @@ public final class ArchiveLockOverlay {
         centered(c,"NIRI · SEALED SECTION",cx,t+cardH*.73f,Math.min((r-l)*.045f,cardH*.075f),MONO,denied?0xff777a74:0xff92958f);
         circle(c,r-(r-l)*.085f,t+cardH*.15f,Math.max(1,u*.004f),denied?0xff555550:0xff666b65);
         int main=denied?0xffbcb3aa:INK, sub=denied?0xff9b928a:0xff6f716b;
-        fitCentered(c,displayName+"，你的会话已锁定。请出示授权口令",w*.5f,h*(portrait?.78f:.88f),u*(portrait?.027f:.021f),w*(portrait?.78f:.60f),BOLD,main);
-        fitCentered(c,displayName+", YOUR SESSION IS LOCKED. PRESENT YOUR AUTHORIZATION KEY.",w*.5f,h*(portrait?.80f:.90f),u*(portrait?.012f:.010f),w*(portrait?.78f:.60f),MONO,sub);
+        float captionWidth=w*(portrait?.46f:.60f);
+        fitCentered(c,displayName+"，你的会话已锁定。请出示授权口令",w*.5f,h*(portrait?.78f:.88f),u*(portrait?.027f:.021f),captionWidth,BOLD,main);
+        fitCentered(c,displayName+", YOUR SESSION IS LOCKED. PRESENT YOUR AUTHORIZATION KEY.",w*.5f,h*(portrait?.80f:.90f),u*(portrait?.012f:.010f),captionWidth,MONO,sub);
     }
     private void centered(Canvas c,String s,float x,float y,float size,Typeface face,int color) {
         P.setTypeface(face); P.setTextSize(size);
@@ -386,9 +401,9 @@ public final class ArchiveLockOverlay {
     }
     /** A quiet, unframed diagnostic texture in the empty left margin. */
     private void honeycomb(Canvas c,float w,float h,boolean portrait,float u) {
-        float left=w*(portrait?.045f:.025f), top=h*(portrait?.52f:.59f);
-        float right=Math.min(w*(portrait?.24f:.15f),left+u*.22f);
-        drawHoneycomb(c,left,top,right,u*.13f);
+        float left=w*(portrait?.085f:.025f), top=h*(portrait?.61f:.59f);
+        float right=Math.min(w*(portrait?.235f:.15f),left+u*.22f);
+        drawHoneycomb(c,left,top,right,portrait?Math.min(u*.13f,h*.075f):u*.13f);
     }
     private void drawHoneycomb(Canvas c,float left,float top,float right,float height) {
         if(hexShader==null)return;

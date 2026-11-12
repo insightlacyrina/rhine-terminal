@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.RectF;
 import android.os.Bundle;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -173,6 +174,20 @@ public final class TerminalInstrumentation extends Instrumentation {
                 writeBitmap(bitmap,dir,name+"-fallback-home.png");
                 ArchiveFallback.drawHome(canvas,new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG),false,true);
                 check(bitmap.getPixel(10,10)==0xff0b0b0c,"Dark gallery uses upstream graphite");
+                if (portrait) {
+                    RectF logBounds = new RectF();
+                    ArchiveLockOverlay.telemetryBounds(w,h,false,logBounds);
+                    check(logBounds.top>h*.49f && logBounds.right<railX,
+                            "Tablet portrait log clears the NIRI card and rail");
+                    bitmap.eraseColor(0);
+                    new ArchiveLockOverlay(context).draw(canvas,w,h,ArchiveTimeline.SCAN,0,
+                            false,"TABLET",73,true,true,true);
+                    check(bitmap.getPixel(Math.round(w*.45f),Math.round(h*.47f))==0,
+                            "Tablet portrait leaves a gutter between NIRI and identity");
+                    int trackY=Math.round(h*.65f+Math.min(w,h*.61f)*.108f);
+                    check(bitmap.getPixel(Math.round(w*.69f),trackY)!=0,
+                            "Tablet portrait scan track sits below the identity");
+                }
             } finally { bitmap.recycle(); }
         }
     }

@@ -62,8 +62,8 @@ public final class LockComposition {
             bool portrait=uSize.y>uSize.x;
             vec2 p=vUv;
             vec4 phases=clamp(uUiPhases,0.0,1.0);
-            vec2 cardMin=portrait?vec2(.12,.342):vec2(.155,.281);
-            vec2 cardMax=portrait?vec2(.53,.49):vec2(.352,.55);
+            vec2 cardMin=portrait?vec2(.085,.342):vec2(.155,.281);
+            vec2 cardMax=portrait?vec2(.415,.49):vec2(.352,.55);
             float shortest=min(uSize.x,uSize.y);
             float identityHalf=shortest*(portrait?.095:.085)/uSize.y;
             vec2 panelMin=vec2(portrait?.48:.68,.5-identityHalf);
@@ -96,12 +96,13 @@ public final class LockComposition {
             vec4 marks=vec4(0);
             vec4 sweep=vec4(0);
             if(uScanOpacity>0.0) {
-                vec2 center=uPhone>.5?vec2(portrait?.65:.47,portrait?.44:.48):vec2(portrait?.66:.43,portrait?.46:.48);
+                vec2 center=uPhone>.5?vec2(portrait?.65:.47,portrait?.44:.48):vec2(portrait?.69:.43,portrait?.65:.48);
+                float scanUnit=portrait && uPhone<=.5?min(s,uSize.y*.61):s;
                 float appear=.92+.08*uScanOpacity;
-                vec2 scanPoint=(vUv-center)*uSize/(s*appear);
+                vec2 scanPoint=(vUv-center)*uSize/(scanUnit*appear);
                 float r=length(scanPoint);
                 float a=atan(scanPoint.y,scanPoint.x)/6.2831853;
-                float pixel=1.0/s;
+                float pixel=1.0/scanUnit;
                 float outer=ringLine(r,.082,pixel)*step(fract(a+1.0/6.0-uScanSeconds/9.0),5.0/6.0);
                 float middle=ringLine(r,.064,pixel*1.45)*step(fract(a-5.0/9.0+uScanSeconds/3.8),7.0/36.0);
                 float inner=ringLine(r,.029,pixel)*step(fract(2.0*(a-1.0/36.0+uScanSeconds/2.6)),2.0/3.0);
@@ -109,7 +110,7 @@ public final class LockComposition {
                 float light=max(satellite(scanPoint,.082,spin,.0024,pixel),
                                 satellite(scanPoint,.082,spin+3.14159265,.0017,pixel));
                 light=max(light,satellite(scanPoint,.050,-1.5707963+6.2831853*uScanSeconds/4.2,.0019,pixel));
-                vec2 bar=(vUv-center)*uSize/s-vec2(0.0,.108);
+                vec2 bar=(vUv-center)*uSize/scanUnit-vec2(0.0,.108);
                 float track=(1.0-smoothstep(.0006,.0015,abs(bar.y)))*
                     step(-.0715,bar.x)*step(bar.x,mix(-.0715,.0715,uScan));
                 float ink=max(max(outer,middle),max(inner,track));
@@ -123,7 +124,9 @@ public final class LockComposition {
                 sweep=vec4(amber*slab,slab);
             }
             vec4 layer=ui+marks*(1.0-ui.a);
-            frag=sweep+layer*(1.0-sweep.a);
+            frag=portrait && uPhone<=.5
+                ? layer+sweep*(1.0-layer.a)
+                : sweep+layer*(1.0-sweep.a);
         }
         """;
 }

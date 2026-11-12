@@ -2,6 +2,7 @@ package dev.rhine.terminal;
 
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.RectF;
 import android.opengl.GLES30;
 import android.opengl.GLUtils;
 
@@ -17,6 +18,7 @@ final class GpuLockTelemetry {
         void main() { frag=texture(uLog,vUv)*uOpacity; }
         """;
     private int program, texture, opacityLocation, x, y, w, h;
+    private final RectF region = new RectF();
     private Bitmap bitmap;
     private Canvas canvas;
     private String[] lastSnapshot;
@@ -41,13 +43,11 @@ final class GpuLockTelemetry {
         }
         if (bitmap==null || screenW!=width || screenH!=height || lastPhone!=phone) {
             if(bitmap!=null) bitmap.recycle();
-            boolean portrait=height>width;
-            float left=portrait?.035f:.024f, right=portrait?(phone?.255f:.235f):.212f;
-            float top=portrait?(phone?.505f:.41f):.57f, bottom=portrait?(phone?.565f:.55f):.79f;
-            x=Math.max(0,(int)Math.floor(width*left)-2);
-            y=Math.max(0,(int)Math.floor(height*top)-2);
-            w=Math.min(width-x,(int)Math.ceil(width*right)+2-x);
-            h=Math.min(height-y,(int)Math.ceil(height*bottom)+2-y);
+            ArchiveLockOverlay.telemetryBounds(width,height,phone,region);
+            x=Math.max(0,(int)Math.floor(region.left)-2);
+            y=Math.max(0,(int)Math.floor(region.top)-2);
+            w=Math.min(width-x,(int)Math.ceil(region.right)+2-x);
+            h=Math.min(height-y,(int)Math.ceil(region.bottom)+2-y);
             bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
             bitmap.setDensity(Bitmap.DENSITY_NONE); canvas=new Canvas(bitmap);
             screenW=width; screenH=height; lastPhone=phone; lastUpdate=Long.MIN_VALUE;
